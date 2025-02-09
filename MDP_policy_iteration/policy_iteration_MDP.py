@@ -8,6 +8,13 @@ Problem statement:
     - Discount factor: 0.9
     - Actions are deterministic and actions leading out of the grid will stay in the same state
 
+Usage:
+    For V Function:
+        python policy_iteration_MDP.py --grid_size 4 --use_V
+
+    For Q Function:
+        python policy_iteration_MDP.py --grid_size 4 
+
 '''
 
 import numpy as np
