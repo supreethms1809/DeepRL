@@ -13,6 +13,7 @@ Problem statement:
 import numpy as np
 import argparse
 import logging
+import copy
 
 class Grid():
     def __init__(self, N, gamma=0.9):
@@ -36,7 +37,8 @@ class valueFunction():
     def __init__(self, use_V=True):
         self.use_V = use_V
     
-    def initialize_valueFunction(self, grid,actions):
+    def initialize_valueFunction(self, grid):
+        actions, ACTIONS = grid.get_actions()
         if self.use_V:
             valueFunc = {state: 0 for state in grid.states}
         else:
@@ -44,14 +46,17 @@ class valueFunction():
         return valueFunc
     
 class policy_V():
-    def __init__(self, grid, actions):
-        self.policy = {state: {action: 1/len(actions) for action in actions} for state in grid.states}
+    def __init__(self, grid):
+        self.grid = grid
+        self.actions, self.ACTIONS = grid.get_actions()
+        self.policy = {state: {action: 1/len(self.actions) for action in self.actions} for state in grid.states}
     
-    def policy_evaluation(self, grid, value, actions):
-        V = value.copy()
-        V_new = value.copy()
+    def policy_evaluation(self, grid, value):
+        V = copy.deepcopy(value)
+        V_new = {}
+        V_new = copy.deepcopy(V)
         convergence = False
-        
+        actions, ACTIONS = self.actions, self.ACTIONS
         k = 1
         while True:
             # Policy Evaluation
@@ -66,19 +71,20 @@ class policy_V():
                 
                 V_new[state] = temp
                 
-            logging.info(f"-------------Iteration {k}-------------------")
-            logging.info(f"Value Function: {V_new}")
+            #logging.info(f"-------------Iteration {k}-------------------")
             k += 1
-            if k == 5:
-                break
-            # if np.allclose(np.array(list(V.values())), np.array(list(V_new.values()))):
-            #     convergence = True
+            #logging.info(f"Value Function: {V_new}")
+            # if k == 5:
             #     break
-            V = V_new.copy()
-        
-        # policy
+            if np.allclose(np.array(list(V.values())), np.array(list(V_new.values()))):
+                convergence = True
+                break
+            V = copy.deepcopy(V_new)
         logging.info(f"Value converged in {k} iterations")
-        stable_policy =  self.policy.copy()
+        
+        # policy improvement        
+        logging.info(f"*****************Starting Policy Improvement*************************")
+        stable_policy =  copy.deepcopy(self.policy)
         for state in grid.states:
             vk_minus_1 = {a:0 for a in actions}
             for action in actions:
@@ -87,47 +93,88 @@ class policy_V():
                 else:
                     next_state = (state[0] + ACTIONS[action][0], state[1] + ACTIONS[action][1])
                 vk_minus_1[action] = V[next_state]
-            logging.info(f"State: {state}, V: {list(vk_minus_1.values())}")
+            #logging.info(f"State: {state}, V: {list(vk_minus_1.values())}")
             max_v = max(list(vk_minus_1.values()))
             max_act = [i for i, x in enumerate(list(vk_minus_1.values())) if x == max_v]
-            logging.info(f"State: {state}, Actions: {max_act}")
+            actions = list(ACTIONS.keys())
+            #logging.info(f"State: {state}, Actions: {[actions[i] for i in max_act]}")
 
-            #stable_policy[state][] = 1
+            #logging.info(f"State: {state}, Policy: {self.policy[state]}")
+            for action in actions:
+               stable_policy[state][action] = 1/len(max_act) if action in [actions[i] for i in max_act] else 0
+            #logging.info(f"State: {state}, Stable Policy: {stable_policy[state]}")
 
         return V, stable_policy
 
-    def policy_improvement(self, grid, value, stable_policy):
-        return stable_policy
-
 class policy_Q():
-    def __init__(self, grid, actions):
-        self.policy = {state: {action: 1/len(actions) for action in actions} for state in grid.states}
+    def __init__(self, grid):
+        self.grid = grid
+        self.actions, self.ACTIONS = grid.get_actions()
+        self.policy = {state: {action: 1/len(self.actions) for action in self.actions} for state in grid.states}
     
     def policy_evaluation(self, grid, value):
-        Q = value.copy()
-        Q_new = value.copy()
+        Q_old = copy.deepcopy(value)
+        Q_new = {}
+        Q_new = copy.deepcopy(Q_old)
+        convergence_threshold = 1e-10 
         convergence = False
-        
+        actions, ACTIONS = self.actions, self.ACTIONS
         k = 1
+        #logging.info(f"Q Before iteration Function: {Q_old}")
         while True:
-
+            #logging.info(f"-------------Iteration {k}-------------------")
+            delta = 0
             # Policy Evaluation
             for state in grid.states:
                 for action in actions:
-                    Q_new[state][action] = grid.rewards[state] + grid.gamma * sum([Q[state][action] for state in grid.states])
+                    if (state[0] + ACTIONS[action][0] < 0) or (state[0] + ACTIONS[action][0] >= grid.N) or (state[1] + ACTIONS[action][1] < 0) or (state[1] + ACTIONS[action][1] >= grid.N):
+                        next_state = state
+                    else:
+                        next_state = (state[0] + ACTIONS[action][0], state[1] + ACTIONS[action][1])
+                    temp = 0
+                    #logging.info(f"Before State: {state}, Action: {action}, Q_old: {Q_old[state][action]} ,Q_new: {Q_new[state][action]}")
+                    for next_action in actions:
+                        #logging.info(f"Before Inside Next Action: Q_old: {Q_old[next_state][next_action]}")
+                        temp += self.policy[state][next_action] * Q_old[next_state][next_action]
+                        #logging.info(f"After Inside Next Action: Q_old: {Q_old[next_state][next_action]}")
+                    Q_new[state][action] = grid.rewards[state] + (grid.gamma * temp)
+                    #logging.info(f"After update State: {state}, Action: {action}, Q_old: {Q_old[state][action]} ,Q_new: {Q_new[state][action]}")
 
-            k += 1
-            Q = Q_new.copy()
-            if np.allclose(Q, Q_new):
+                    # Calculate the maximum change for convergence check
+                    delta = max(delta, abs(Q_new[state][action] - Q_old[state][action]))
+
+            if delta < convergence_threshold:
+                logging.info(f"Convergence achieved in {k} iterations")
                 convergence = True
                 break
+
+            k += 1
+            Q_old = copy.deepcopy(Q_new)
         
-        # Policy
+        # Policy Improvement
+        logging.info(f"*****************Starting Policy Improvement*************************")
+        stable_policy =  copy.deepcopy(self.policy)
+        for state in grid.states:
+            Qk_minus_1 = {a:0 for a in actions}
+            for action in actions:
+                if (state[0] + ACTIONS[action][0] < 0) or (state[0] + ACTIONS[action][0] >= grid.N) or (state[1] + ACTIONS[action][1] < 0) or (state[1] + ACTIONS[action][1] >= grid.N):
+                    next_state = state
+                else:
+                    next_state = (state[0] + ACTIONS[action][0], state[1] + ACTIONS[action][1])
+                for next_action in actions:
+                    Qk_minus_1[action] = Q_old[next_state][next_action]
+            #logging.info(f"State: {state}, V: {list(Qk_minus_1.values())}")
+            max_q = max(list(Qk_minus_1.values()))
+            max_act = [i for i, x in enumerate(list(Qk_minus_1.values())) if x == max_q]
+            actions = list(ACTIONS.keys())
+            #logging.info(f"State: {state}, Actions: {[actions[i] for i in max_act]}")
 
-        return Q, self.policy
+            #logging.info(f"State: {state}, Policy: {self.policy[state]}")
+            for action in actions:
+               stable_policy[state][action] = 1/len(max_act) if action in [actions[i] for i in max_act] else 0
+            #logging.info(f"State: {state}, Stable Policy: {stable_policy[state]}")
 
-    def policy_improvement(self, grid, value):
-        pass
+        return Q_old, stable_policy
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s') 
@@ -135,33 +182,50 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Size of the grid, Create NxN grid')
     log = argparse.ArgumentParser(description='Logging level')
     parser.add_argument('--grid_size', type=int, default=4, help='Size of the grid (NxN)')
-    parser.add_argument('--use_V', type=bool, default=True, help='Use V Function')
+    parser.add_argument('--use_V', action='store_true', help='Use V Function')
     args = parser.parse_args()
     N = args.grid_size
     use_V = args.use_V
+    logging.info(f"user_V: {use_V}")
 
     if use_V:
         logging.info("Policy Iteration using V Function")
     else:
         logging.info("Policy Iteration using Q Function")
 
+    # Initialize the grid
     grid = Grid(N)
-    actions, ACTIONS = grid.get_actions()
-    value = valueFunction()
-    value = value.initialize_valueFunction(grid, ACTIONS)
+    value = valueFunction(use_V=use_V)
+    value = value.initialize_valueFunction(grid)
 
     if use_V:
-        policy = policy_V(grid, actions)
-        V, stable_policy = policy.policy_evaluation(grid, value, actions)
-        #logging.info(f"Value Function: {V}")
-        updated_policy = policy.policy_improvement(grid, value, stable_policy)
-        optimal_policy = policy.policy
+        logging.info(f"*****************Policy Iteration using V*************************")
+        policy = policy_V(grid)
+        logging.info(f"[V] Current Policy: {policy.policy}")
+        V, stable_policy = policy.policy_evaluation(grid, value)
+        logging.info(f"[V] Stable Policy: {stable_policy}")
     else:
-        policy = policy_Q(grid, actions)
-        Q = policy.policy_evaluation(grid, value)
-        logging.info(f"Value Function: {Q}")
-        policy.policy_improvement(grid, value)
-        optimal_policy = policy.policy
+        logging.info(f"*****************Policy Iteration using Q*************************")
+        policy = policy_Q(grid)
+        logging.info(f"[Q] Current Policy Q: {policy.policy}")
+        Q, stable_policy = policy.policy_evaluation(grid, value)
+        # logging.info(f"[Q] Value Function: {Q}")
+        logging.info(f"[Q] Stable Policy: {stable_policy}")
+
+    # Test: Can we modify policy second time?
+    if use_V:
+        logging.info(f"***************** [2] Policy Iteration using V*************************")
+        logging.info(f"[V] Current Policy: {stable_policy}")
+        policy.policy = stable_policy
+        V, stable_policy = policy.policy_evaluation(grid, value)
+        logging.info(f"[V] New Stable Policy: {stable_policy}")
+    else:
+        logging.info(f"***************** [2] Policy Iteration using Q*************************")
+        logging.info(f"[Q] Current Policy Q: {stable_policy}")
+        policy.policy = stable_policy
+        Q, stable_policy = policy.policy_evaluation(grid, value)
+        # logging.info(f"[Q] Value Function: {Q}")
+        logging.info(f"[Q] New Stable Policy: {stable_policy}")
     
 
 
