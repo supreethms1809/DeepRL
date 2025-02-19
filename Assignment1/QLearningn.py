@@ -29,7 +29,12 @@ import argparse
 import logging
 import random
 import matplotlib.pyplot as plt
-from sympy import Q
+
+# Ensure that matplotlib plots are displayed inline if running in an interactive environment
+try:
+    get_ipython().run_line_magic('matplotlib', 'inline')
+except:
+    pass
 
 # Setup the logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -96,29 +101,34 @@ class Grid():
         self.policy[state] = action
 
     def plot_episodes_vs_totalrewards(self, reward_plot_values):
-        episodes = [i for i in range(len(reward_plot_values))] 
+        episodes = [i for i in range(len(reward_plot_values))]
+        plt.figure() 
         plt.plot(episodes, reward_plot_values)
         plt.xlabel('Episodes')
         plt.ylabel('Total Rewards')
         plt.title('Episodes vs Total Rewards')
         plt.grid(True)
-        plt.show()
+        plt.savefig('images/episode_totalrewards_plot_Qlearn.png')
+        #plt.show()
 
     def plot_episodes_vs_steps(self, steps_plot_values):
         episodes = [i for i in range(len(steps_plot_values))]
+        plt.figure()
         plt.plot(episodes, steps_plot_values)
         plt.xlabel('Episodes')
         plt.ylabel('Total Steps')
         plt.title('Episodes vs Total Steps')
         plt.grid(True)
-        plt.show()
+        plt.savefig('images/episode_steps_plot_Qlearn.png')
+        #plt.show()
 
     # Plot the rewards for checking the rewards
     def plot_grid(self,Q):
         maxQ = np.zeros((self.N, self.N))
         for state in self.states:
             maxQ[state] = max(Q[state].values())
-        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower')
+        plt.figure()
+        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower', vmin=-100, vmax=100)
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
         plt.title('2D grid')
@@ -130,14 +140,15 @@ class Grid():
         else:
             plt.xticks(np.arange(0, self.N, self.N//5))
             plt.yticks(np.arange(0, self.N, self.N//5))
-        plt.show()
+        plt.savefig('images/grid_plot_Qlearn.png')
+        #plt.show()
 
 if __name__ == '__main__':
     # Parse the user arguments
     parser = argparse.ArgumentParser(description='Q-Learning for Maze Problem')
     parser.add_argument('--grid_size', type=int, default=20, help='Size of the grid (NxN)')
     parser.add_argument('--alpha', type=restricted_float_alpha, default=0.01, help='Learning rate')
-    parser.add_argument('--gamma', type=restricted_float, default=0.9, help='Discount factor')
+    parser.add_argument('--gamma', type=restricted_float, default=0.99, help='Discount factor')
     parser.add_argument('--epsilon', type=restricted_float, default=0.01, help='Epsilon for epsilon-greedy policy')
     parser.add_argument('--episodes', type=int, default=10000, help='Number of episodes')
     parser.add_argument('--steps', type=int, default=1000, help='Number of steps in each episode')

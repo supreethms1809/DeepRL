@@ -96,29 +96,34 @@ class Grid():
         self.policy[state] = action
 
     def plot_episodes_vs_totalrewards(self, reward_plot_values):
-        episodes = [i for i in range(len(reward_plot_values))] 
+        episodes = [i for i in range(len(reward_plot_values))]
+        plt.figure()  
         plt.plot(episodes, reward_plot_values)
         plt.xlabel('Episodes')
         plt.ylabel('Total Rewards')
         plt.title('Episodes vs Total Rewards')
         plt.grid(True)
-        plt.show()
+        plt.savefig('images/episode_totalrewards_plot_SARSAlearn.png')
+        #plt.show()
 
     def plot_episodes_vs_steps(self, steps_plot_values):
         episodes = [i for i in range(len(steps_plot_values))]
+        plt.figure() 
         plt.plot(episodes, steps_plot_values)
         plt.xlabel('Episodes')
         plt.ylabel('Total Steps')
         plt.title('Episodes vs Total Steps')
         plt.grid(True)
-        plt.show()
+        plt.savefig('images/episode_steps_plot_SARSAlearn.png')
+        #plt.show()
 
     # Plot the rewards for checking the rewards
     def plot_grid(self,Q):
         maxQ = np.zeros((self.N, self.N))
         for state in self.states:
             maxQ[state] = max(Q[state].values())
-        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower')
+        plt.figure() 
+        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower', vmin=-100, vmax=100)
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
         plt.title('2D grid')
@@ -130,7 +135,8 @@ class Grid():
         else:
             plt.xticks(np.arange(0, self.N, self.N//5))
             plt.yticks(np.arange(0, self.N, self.N//5))
-        plt.show()
+        plt.savefig('images/grid_plot_SARSAlearn.png')
+        #plt.show()
 
 if __name__ == '__main__':
     # Parse the user arguments
