@@ -60,35 +60,49 @@ class Grid():
         self.GRID = np.zeros((self.N, self.N))
         self.states = [(i, j) for i in range(self.N) for j in range(self.N)]
         self.goal_state = (self.N-1, self.N-1)
+        self.actions = self.get_actions()[0]
         self.V = {state: 0 for state in self.states}
-        self.policy = {state: random.choice(self.get_actions()[0]) for state in self.states}
         self.gamma = gamma
         self.alpha = alpha
         self.epsilon = epsilon
+        self.policy = {state: {action: (self.epsilon / len(self.actions)) for action in self.actions} for state in self.states}
 
-    def get_best_action(self, state, V):
+
+    def get_best_action(self, state, V, policy):
         actions = self.get_actions()[0]
         best_action = None
         best_value = float('-inf')
         for action in actions:
             next_state = (state[0] + self.get_actions()[1][action][0], state[1] + self.get_actions()[1][action][1])
-            if 0 <= next_state[0] < self.N and 0 <= next_state[1] < self.N:
+            if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
+                pass
+            else:
                 if V[next_state] > best_value:
                     best_value = V[next_state]
                     best_action = action
         return best_action
-
     
-    # Define the rewards
-    def get_rewards(self, state, action):
-        if state == self.goal_state:
-            rewards = 100
-        if (state[0] < 0) or (state[0] >= self.N) or (state[1] < 0) or (state[1] >= self.N):
-            rewards = -10
-        else:
-            rewards = -1
-        return rewards
-
+    def update_policy(self, state, V, policy):
+        actions = self.get_actions()[0]
+        best_action = None
+        best_value = float('-inf')
+        for action in actions:
+            next_state = (state[0] + self.get_actions()[1][action][0], state[1] + self.get_actions()[1][action][1])
+            if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
+                pass
+            else:
+                if V[next_state] > best_value:
+                    best_value = V[next_state]
+                    best_action = action
+        for action in actions:
+            if action != best_action:
+                policy[state][action] = self.epsilon / (len(actions))
+                #policy[state][action] = 0
+            else:
+                policy[state][best_action] = 1 - self.epsilon + (self.epsilon / (len(actions)))
+                #policy[state][best_action] = 1
+        return policy
+    
     def get_actions(self):
         ACTIONS = {
             'up': (0, 1),
@@ -96,22 +110,7 @@ class Grid():
             'left': (-1, 0),
             'right': (1, 0)
         }
-        return list(ACTIONS.keys()), ACTIONS
-
-    def random_policy(self, state, actions):
-        action = random.choice(actions)
-        return action 
-    
-    def epsilon_greedy(self, state, actions):
-        max_action = np.argmax([self.Q[state][action] for action in actions])
-        pi_dash = [self.epsilon/len(actions) for _ in range(len(actions))]
-        pi_dash[max_action] += 1 - self.epsilon
-
-        action = np.random.choice(actions, p=pi_dash)
-        return action
-
-    def update_policy(self, state, action):
-        self.policy[state] = action
+        return list(ACTIONS.keys()), ACTIONS 
 
     def plot_episodes_vs_totalrewards(self, reward_plot_values):
         episodes = [i for i in range(len(reward_plot_values))]
@@ -141,7 +140,7 @@ class Grid():
         for state in self.states:
             mV[state] = V[state]
         plt.figure()
-        plt.imshow(mV, cmap='viridis', interpolation='none', origin='lower', vmin=-100, vmax=100)
+        plt.imshow(mV, cmap='viridis', interpolation='none', origin='lower')
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
         plt.title('2D grid')
@@ -197,42 +196,42 @@ if __name__ == '__main__':
         state = (0, 0)
         total_reward = 0
         for step in range(steps):
-            if random.uniform(0, 1) < epsilon:
-                action = random.choice(grid.get_actions()[0])
+
+            if (random.uniform(0, 1) < epsilon) or (grid.V[state] == 0):
+                action = random.choice(list(grid.policy[state].keys()))
             else:
-                action = grid.get_best_action(state,grid.V)
-            # old_action = None
-            # action = random.choice(grid.get_actions()[0])
-            # if (action == old_action) and (reward == -10):
-            #     action = random.choice(grid.get_actions()[0])
-            # old_action = action
+                action = grid.get_best_action(state, grid.V, grid.policy)
+
             next_state = (state[0] + grid.get_actions()[1][action][0], state[1] + grid.get_actions()[1][action][1])
             if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
                 next_state = state
                 reward = -10
             elif next_state == grid.goal_state:
-                #print(f"Episode: {episode}, Goal state reached: {next_state}")
-                reward = 500
+                reward = 100
             else:
                 reward = -1
-            #reward = grid.get_rewards(next_state, action)
 
-            old_value = grid.V[state]
-            grid.V[state] = grid.V[state] + alpha * ((reward + gamma * grid.V[next_state]) - grid.V[state])
-            #logging.info(f"State: {state}, Action: {action}, next state: {next_state}, Reward: {reward}, Old Value: {old_value}, New Value: {grid.V[state]}")
+            TD_error = reward + gamma * grid.V[next_state] - grid.V[state]
+
+            grid.V[state] = grid.V[state] + alpha * TD_error
 
             total_reward += reward
-            state = next_state
+            #grid.policy = grid.update_policy(state, grid.V, grid.policy)
+            if next_state == state:
+                steps_plot_values.append(step)
+                reward_plot_values.append(total_reward)
+                break
+            else:
+                state = next_state
             if state == grid.goal_state:
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
-                #logging.info(f"Episode: {episode}, State: {state}, Goal state reached: {grid.goal_state}, Total reward: {total_reward}")
-                #exit()
                 break
         if episode % 1000 == 0:
             logging.info(f"Episode number: {episode}, Total reward: {total_reward}")
     
-    grid.plot_episodes_vs_totalrewards(reward_plot_values)
-    grid.plot_episodes_vs_steps(steps_plot_values)
-    print(f"Value of V: {grid.V}")
+    #grid.plot_episodes_vs_totalrewards(reward_plot_values)
+    #grid.plot_episodes_vs_steps(steps_plot_values)
+    #print(f"Value of V: {grid.V}")
+    #print(f"Policy: {grid.policy}")
     grid.plot_grid(grid.V)
