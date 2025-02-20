@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 
 # Ensure that matplotlib plots are displayed inline if running in an interactive environment
 try:
+    from IPython import get_ipython
     get_ipython().run_line_magic('matplotlib', 'inline')
 except:
     pass
@@ -69,6 +70,10 @@ class Grid():
         actions, ACTIONS = self.get_actions()
         rewards = {}
         for state in self.states:
+            if state == self.goal_state:
+                for action in actions:
+                    rewards[(state, action)] = 100
+                break
             for action in actions:
                 if (state[0] + ACTIONS[action][0] < 0) or (state[0] + ACTIONS[action][0] >= self.N) or (state[1] + ACTIONS[action][1] < 0) or (state[1] + ACTIONS[action][1] >= self.N):
                     next_state = state
