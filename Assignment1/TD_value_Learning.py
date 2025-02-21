@@ -82,25 +82,26 @@ class Grid():
                     best_action = action
         return best_action
     
-    def update_policy(self, state, V, policy):
-        actions = self.get_actions()[0]
-        best_action = None
-        best_value = float('-inf')
-        for action in actions:
-            next_state = (state[0] + self.get_actions()[1][action][0], state[1] + self.get_actions()[1][action][1])
-            if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
-                pass
-            else:
-                if V[next_state] > best_value:
-                    best_value = V[next_state]
-                    best_action = action
-        for action in actions:
-            if action != best_action:
-                policy[state][action] = self.epsilon / (len(actions))
-                #policy[state][action] = 0
-            else:
-                policy[state][best_action] = 1 - self.epsilon + (self.epsilon / (len(actions)))
-                #policy[state][best_action] = 1
+    def update_policy(self, V, policy):
+        for state in self.states:
+            actions = self.get_actions()[0]
+            best_action = None
+            best_value = float('-inf')
+            for action in actions:
+                next_state = (state[0] + self.get_actions()[1][action][0], state[1] + self.get_actions()[1][action][1])
+                if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
+                    pass
+                else:
+                    if V[next_state] > best_value:
+                        best_value = V[next_state]
+                        best_action = action
+            for action in actions:
+                if action != best_action:
+                    policy[state][action] = self.epsilon / (len(actions))
+                    #policy[state][action] = 0
+                else:
+                    policy[state][best_action] = 1 - self.epsilon + (self.epsilon / (len(actions)))
+                    #policy[state][best_action] = 1
         return policy
     
     def get_actions(self):
@@ -161,7 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--grid_size', type=int, default=20, help='Size of the grid (NxN)')
     parser.add_argument('--alpha', type=restricted_float_alpha, default=0.01, help='Learning rate')
     parser.add_argument('--gamma', type=restricted_float, default=0.99, help='Discount factor')
-    parser.add_argument('--epsilon', type=restricted_float, default=0.01, help='Epsilon for epsilon-greedy policy')
+    parser.add_argument('--epsilon', type=restricted_float, default=0.0001, help='Epsilon for epsilon-greedy policy')
     parser.add_argument('--episodes', type=int, default=10000, help='Number of episodes')
     parser.add_argument('--steps', type=int, default=1000, help='Number of steps in each episode')
     parser.add_argument('--loggin', action='store_true', help='Enable logging')
@@ -190,6 +191,8 @@ if __name__ == '__main__':
     grid = Grid(GRID_SIZE, gamma)
     if loggin:
         logging.info(f"States: {grid.policy}")
+
+    #epsilon_decay = 0.995
         
     for episode in range(episodes):
         # Initialize s
@@ -216,17 +219,22 @@ if __name__ == '__main__':
             grid.V[state] = grid.V[state] + alpha * TD_error
 
             total_reward += reward
-            #grid.policy = grid.update_policy(state, grid.V, grid.policy)
+            
             if next_state == state:
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
-            else:
+            elif next_state != state:
                 state = next_state
             if state == grid.goal_state:
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
+        grid.policy = grid.update_policy(grid.V, grid.policy)
+
+        # Decay epsilon
+        #epsilon = max(0.01, epsilon * epsilon_decay)
+
         if episode % 1000 == 0:
             logging.info(f"Episode number: {episode}, Total reward: {total_reward}")
     
