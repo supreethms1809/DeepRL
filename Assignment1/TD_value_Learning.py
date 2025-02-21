@@ -227,6 +227,7 @@ if __name__ == '__main__':
             elif next_state != state:
                 state = next_state
             if state == grid.goal_state:
+                grid.V[state] = 100
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
@@ -238,8 +239,8 @@ if __name__ == '__main__':
         if episode % 1000 == 0:
             logging.info(f"Episode number: {episode}, Total reward: {total_reward}")
     
-    #grid.plot_episodes_vs_totalrewards(reward_plot_values)
-    #grid.plot_episodes_vs_steps(steps_plot_values)
+    grid.plot_episodes_vs_totalrewards(reward_plot_values)
+    grid.plot_episodes_vs_steps(steps_plot_values)
     #print(f"Value of V: {grid.V}")
     #print(f"Policy: {grid.policy}")
     grid.plot_grid(grid.V)

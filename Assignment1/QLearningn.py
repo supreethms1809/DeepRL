@@ -114,7 +114,7 @@ class Grid():
         plt.title('Episodes vs Total Rewards')
         plt.grid(True)
         plt.savefig('images/episode_totalrewards_plot_Qlearn.png')
-        #plt.show()
+        plt.show()
 
     def plot_episodes_vs_steps(self, steps_plot_values):
         episodes = [i for i in range(len(steps_plot_values))]
@@ -125,7 +125,7 @@ class Grid():
         plt.title('Episodes vs Total Steps')
         plt.grid(True)
         plt.savefig('images/episode_steps_plot_Qlearn.png')
-        #plt.show()
+        plt.show()
 
     # Plot the rewards for checking the rewards
     def plot_grid(self,Q):
@@ -146,7 +146,7 @@ class Grid():
             plt.xticks(np.arange(0, self.N, self.N//5))
             plt.yticks(np.arange(0, self.N, self.N//5))
         plt.savefig('images/grid_plot_Qlearn.png')
-        #plt.show()
+        plt.show()
 
 if __name__ == '__main__':
     # Parse the user arguments
@@ -197,8 +197,14 @@ if __name__ == '__main__':
             grid.Q[state][action] = grid.Q[state][action] + alpha * (reward + gamma * max(grid.Q[next_state].values()) - grid.Q[state][action])
             grid.update_policy(state, action)
             total_reward += reward
-            state = next_state
+            if next_state == state:
+                steps_plot_values.append(step)
+                reward_plot_values.append(total_reward)
+                break
+            elif next_state != state:
+                state = next_state
             if state == grid.goal_state:
+                grid.Q[state][action] = 100
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
