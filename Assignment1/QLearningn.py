@@ -136,7 +136,7 @@ class Grid():
         plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower', vmin=-100, vmax=100)
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
-        plt.title('2D grid')
+        plt.title('Maximum Q-values for each state')
         plt.xlabel('X')
         plt.ylabel('Y')
         if self.N < 20:
@@ -155,7 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=restricted_float_alpha, default=0.01, help='Learning rate')
     parser.add_argument('--gamma', type=restricted_float, default=0.99, help='Discount factor')
     parser.add_argument('--epsilon', type=restricted_float, default=0.01, help='Epsilon for epsilon-greedy policy')
-    parser.add_argument('--episodes', type=int, default=10000, help='Number of episodes')
+    parser.add_argument('--episodes', type=int, default=12000, help='Number of episodes')
     parser.add_argument('--steps', type=int, default=1000, help='Number of steps in each episode')
     parser.add_argument('--loggin', action='store_true', help='Enable logging')
     args = parser.parse_args()

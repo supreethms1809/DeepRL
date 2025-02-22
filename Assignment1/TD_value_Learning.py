@@ -97,7 +97,9 @@ class Grid():
                         best_action = action
             for action in actions:
                 if action != best_action:
+                    # Epsilon-greedy policy
                     policy[state][action] = self.epsilon / (len(actions))
+                    # Deterministic policy
                     #policy[state][action] = 0
                 else:
                     policy[state][best_action] = 1 - self.epsilon + (self.epsilon / (len(actions)))
@@ -144,7 +146,7 @@ class Grid():
         plt.imshow(mV, cmap='viridis', interpolation='none', origin='lower')
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
-        plt.title('2D grid')
+        plt.title('Learned Value Function V(s)')
         plt.xlabel('X')
         plt.ylabel('Y')
         if self.N < 20:
@@ -241,6 +243,4 @@ if __name__ == '__main__':
     
     grid.plot_episodes_vs_totalrewards(reward_plot_values)
     grid.plot_episodes_vs_steps(steps_plot_values)
-    #print(f"Value of V: {grid.V}")
-    #print(f"Policy: {grid.policy}")
     grid.plot_grid(grid.V)
