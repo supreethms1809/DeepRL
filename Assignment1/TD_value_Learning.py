@@ -42,6 +42,7 @@ except:
 # Setup the logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# check the input arguments
 def restricted_float(x):
     x = float(x)
     if x < 0.0 or x > 1.0:
@@ -54,6 +55,7 @@ def restricted_float_alpha(x):
         raise argparse.ArgumentTypeError(f"{x} not in range [0.1, 0.01]")
     return x
 
+# Define the Grid class
 class Grid():
     def __init__(self, N, gamma=0.99, alpha=0.01, epsilon=0.01):
         self.N = N
@@ -67,8 +69,8 @@ class Grid():
         self.epsilon = epsilon
         self.policy = {state: {action: (self.epsilon / len(self.actions)) for action in self.actions} for state in self.states}
 
-
-    def get_best_action(self, state, V, policy):
+# Get the best action for the given state using max V(s). Can be written in a simpler way using argmax function
+    def get_best_action(self, state, V):
         actions = self.get_actions()[0]
         best_action = None
         best_value = float('-inf')
@@ -82,6 +84,7 @@ class Grid():
                     best_action = action
         return best_action
     
+    # Update the policy using epsilon-greedy policy. Again can be written in a simpler way using argmax function
     def update_policy(self, V, policy):
         for state in self.states:
             actions = self.get_actions()[0]
@@ -106,6 +109,7 @@ class Grid():
                     #policy[state][best_action] = 1
         return policy
     
+    # Define the actions for the agent to move in the grid
     def get_actions(self):
         ACTIONS = {
             'up': (0, 1),
@@ -115,6 +119,7 @@ class Grid():
         }
         return list(ACTIONS.keys()), ACTIONS 
 
+    # Plot the episodes vs total rewards
     def plot_episodes_vs_totalrewards(self, reward_plot_values):
         episodes = [i for i in range(len(reward_plot_values))]
         plt.figure() 
@@ -126,6 +131,7 @@ class Grid():
         plt.savefig('images/episode_totalrewards_plot_TD_valuelearn.png')
         plt.show()
 
+    # Plot the episodes vs total steps
     def plot_episodes_vs_steps(self, steps_plot_values):
         episodes = [i for i in range(len(steps_plot_values))]
         plt.figure()
@@ -137,7 +143,7 @@ class Grid():
         plt.savefig('images/episode_steps_plot_TD_valuelearn.png')
         plt.show()
 
-    # Plot the rewards for checking the rewards
+    # Plot the max V using the learned value function
     def plot_grid(self,V):
         mV = np.zeros((self.N, self.N))
         for state in self.states:
@@ -168,6 +174,7 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=10000, help='Number of episodes')
     parser.add_argument('--steps', type=int, default=1000, help='Number of steps in each episode')
     parser.add_argument('--loggin', action='store_true', help='Enable logging')
+    parser.add_argument('--plot', action='store_true', help='Enable plotting')
     args = parser.parse_args()
 
     GRID_SIZE = args.grid_size
@@ -177,6 +184,7 @@ if __name__ == '__main__':
     episodes = args.episodes
     steps = args.steps
     loggin = args.loggin
+    plot = args.plot
 
     if loggin:
         logging.info(f"Grid size: {GRID_SIZE}")
@@ -190,23 +198,25 @@ if __name__ == '__main__':
     reward_plot_values = []
     steps_plot_values = []
 
+    # Initialize the grid
     grid = Grid(GRID_SIZE, gamma)
     if loggin:
         logging.info(f"States: {grid.policy}")
 
     #epsilon_decay = 0.995
-        
+    
+    # TD-Learning using Value function
     for episode in range(episodes):
         # Initialize s
         state = (0, 0)
         total_reward = 0
         for step in range(steps):
-
+            # Choose a from s using policy derived from V
             if (random.uniform(0, 1) < epsilon) or (grid.V[state] == 0):
                 action = random.choice(list(grid.policy[state].keys()))
             else:
-                action = grid.get_best_action(state, grid.V, grid.policy)
-
+                action = grid.get_best_action(state, grid.V)
+            # Take action a, calculate r, s'
             next_state = (state[0] + grid.get_actions()[1][action][0], state[1] + grid.get_actions()[1][action][1])
             if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
                 next_state = state
@@ -216,12 +226,14 @@ if __name__ == '__main__':
             else:
                 reward = -1
 
+            # Calculate TD error and update V(s)
             TD_error = reward + gamma * grid.V[next_state] - grid.V[state]
 
             grid.V[state] = grid.V[state] + alpha * TD_error
 
             total_reward += reward
             
+            # Check if the agent is hitting the boundary or reached the goal
             if next_state == state:
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
@@ -229,18 +241,19 @@ if __name__ == '__main__':
             elif next_state != state:
                 state = next_state
             if state == grid.goal_state:
+                # Update the value of the goal state
                 grid.V[state] = 100
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
         grid.policy = grid.update_policy(grid.V, grid.policy)
 
-        # Decay epsilon
+        # Try Decay epsilon
         #epsilon = max(0.01, epsilon * epsilon_decay)
 
         if episode % 1000 == 0:
             logging.info(f"Episode number: {episode}, Total reward: {total_reward}")
-    
-    grid.plot_episodes_vs_totalrewards(reward_plot_values)
-    grid.plot_episodes_vs_steps(steps_plot_values)
-    grid.plot_grid(grid.V)
+    if plot == True:
+        grid.plot_episodes_vs_totalrewards(reward_plot_values)
+        grid.plot_episodes_vs_steps(steps_plot_values)
+        grid.plot_grid(grid.V)
