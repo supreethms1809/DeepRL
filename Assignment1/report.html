@@ -7852,32 +7852,39 @@ d. Compare and comment on the performance of these two methods that you observe.
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="Comparision-between-using-TD(0)-vs-Q-learning">Comparision between using TD(0) vs Q-learning<a class="anchor-link" href="#Comparision-between-using-TD(0)-vs-Q-learning">¶</a></h2><ol>
-<li>Looking at the Total Rewards in episodes <br/>
+<li><p>Looking at the Total Rewards in episodes <br/>
  Using V(s): The total rewards varies a lot over the episodes. This learning method is quick to find the positive rewards here but there are multiple large dips (high variance) in the graph even at later episodes indicating a bit of instability in learning. So it hard to say when there is convergence without a clear trend. <br/>
- Using Q(s,a): On the other hand, Q-learning has a reward curve which smoothly increases over the episodes. This method find the positive rewards comparitively slower to TD(0) state value method but it starts from a low value and gradually improves with episodes and shows a clear convergence. The clear convergence shows a more stable convergence. <br/>
+ Using Q(s,a): On the other hand, Q-learning has a reward curve which smoothly increases over the episodes. This method find the positive rewards comparitively slower to TD(0) state value method but it starts from a low value and gradually improves with episodes and shows a clear convergence. The clear convergence shows a more stable learning.</p>
+<br/>
 <br/>
 </li>
-<li>Looking at the Total steps per episodes <br/>
+<li><p>Looking at the Total steps per episodes <br/>
  Using V(s): Similar to total rewards graph, the total steps per episodes graph shows the number of steps per episode remains inconsistent. There is no clear decreasing trend in the grpah. This shows a high variance in number of steps. <br/>
- Using Q(s,a): Initially the agent takes a very large number of steps exploring the env with various state and action pair. After a certain episodes, the number of steps decreases and stabilizes at a lower value. This shows a good learning curve. <br/>
+ Using Q(s,a): Initially the agent takes a very large number of steps exploring the env with various state and action pair. After a certain episodes, the number of steps decreases and stabilizes at a lower value. This shows a good learning curve.</p>
+<br/>
 <br/>
 </li>
-<li>Looking the max V(s) vs max Q(s,a) <br/>
+<li><p>Looking the max V(s) vs max Q(s,a) <br/>
  Using V(s): This method shows a distinction in max V(s) values with less number of episodes. <br/>
- Using Q(s,a): Compared to the other method, Q-learning takes more episode to stabilize the values of Q. But the gradient is more distinct once there is a stabilization. This again asserts the point that Q-learning is more stable. <br/>
+ Using Q(s,a): Compared to the other method, Q-learning takes more episode to stabilize the values of Q. But the gradient is more distinct once there is a stabilization. This again asserts the point that Q-learning is more stable.</p>
+<br/>
 <br/>
 </li>
-<li>Policy: 
- Finding optimal policy using Q is easier and more accurate. Q directly tells us about both state and action which leads to maximize rewards. On the other hand, when using V(s) we need to check all possible actions and then get the policy. <br/>
+<li><p>Policy: 
+ Finding optimal policy using Q is easier and more accurate. Q directly tells us about both state and action which leads to maximize rewards. On the other hand, when using V(s) we need to check all possible actions and then get the policy.</p>
+<br/>
 <br/>
 </li>
-<li>Changing the parameters 
- Learning rate: Changing learning rate from 0.01 to 0.02, changes the rate of convergence in both the cases. The TD(0) value function case still has high variance in both total rewards per episode as well as total steps per episode. In case of Q learning, it results in a faster convergence but both rewards per episode and steps per episode are stable. <br/>
+<li><p>Changing the parameters 
+ Learning rate: Changing learning rate from 0.01 to 0.02, changes the rate of convergence in both the cases. The TD(0) value function case still has high variance in both total rewards per episode as well as total steps per episode. In case of Q learning, it results in a faster convergence but both rewards per episode and steps per episode are stable.</p>
+<br/>
 <br/>
  Epsilon: (0.01 --&gt; 0.02) Increasing the epsilon results in the same trend as changing in learning rate (but normal convergence). But the key difference here is TD value function learning takes significantly more steps across episodes.
  <br/>
 <br/>
  Discount factor: (0.99 --&gt; 0.90) Changing the discount factor has an effect on the final max Q values and V(s) values. In both cases, the gradient is not as distintive as the default case for the same number of steps and episodes.
+<h3 id="Code-link">Code link<a class="anchor-link" href="#Code-link">¶</a></h3><p>You can find the code and versions in
+ <a href="https://github.com/supreethms1809/DeepRL.git">Deep RL</a></p>
 </li>
 </ol>
 </div>
