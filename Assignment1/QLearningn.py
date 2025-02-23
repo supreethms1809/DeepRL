@@ -60,33 +60,11 @@ class Grid():
         self.GRID = np.zeros((self.N, self.N))
         self.states = [(i, j) for i in range(self.N) for j in range(self.N)]
         self.goal_state = (self.N-1, self.N-1)
-        self.rewards = self.set_rewards()
         self.Q = {state: {action: 0 for action in self.get_actions()[0]} for state in self.states}
         self.policy = {state: random.choice(self.get_actions()[0]) for state in self.states}
         self.gamma = gamma
         self.alpha = alpha
         self.epsilon = epsilon
-    
-    # Define the rewards for each state-action pair, Explicitly define the rewards for each state action pair for understanding purposes.
-    # We can also write a get_rewards function to get the rewards for each state-action pair.
-    def set_rewards(self):
-        actions, ACTIONS = self.get_actions()
-        rewards = {}
-        for state in self.states:
-            # If the state is the goal state, the reward is 0 for all actions. 
-            if state == self.goal_state:
-                for action in actions:
-                    rewards[(state, action)] = 0
-            for action in actions:
-                if (state[0] + ACTIONS[action][0] < 0) or (state[0] + ACTIONS[action][0] >= self.N) or (state[1] + ACTIONS[action][1] < 0) or (state[1] + ACTIONS[action][1] >= self.N):
-                    next_state = state
-                    rewards[(state, action)] = -10
-                else:
-                    next_state = (state[0] + ACTIONS[action][0], state[1] + ACTIONS[action][1])
-                    rewards[(state, action)] = -1
-                if next_state == self.goal_state:
-                    rewards[(state, action)] = 100
-        return rewards
 
     # Define the actions for the agent to move in the maze
     def get_actions(self):
@@ -98,7 +76,8 @@ class Grid():
         }
         return list(ACTIONS.keys()), ACTIONS 
     
-    # Define the epsilon-greedy policy based on the equation.
+    # Define the epsilon-greedy policy based on the equation. 
+    # pi_dash is the probability distribution for all the actions and then we adjust Pob for max action 
     def epsilon_greedy(self, state, actions):
         max_action = np.argmax([self.Q[state][action] for action in actions])
         pi_dash = [self.epsilon/len(actions) for _ in range(len(actions))]
@@ -141,7 +120,7 @@ class Grid():
         for state in self.states:
             maxQ[state] = max(Q[state].values())
         plt.figure()
-        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower', vmin=-10, vmax=100)
+        plt.imshow(maxQ, cmap='viridis', interpolation='none', origin='lower')
         plt.colorbar()
         #plt.grid(True, which='both', color='gray', linestyle='-', linewidth=0.5)
         plt.title('Maximum Q-values for each state')
@@ -163,8 +142,8 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=restricted_float_alpha, default=0.01, help='Learning rate')
     parser.add_argument('--gamma', type=restricted_float, default=0.99, help='Discount factor')
     parser.add_argument('--epsilon', type=restricted_float, default=0.01, help='Epsilon for epsilon-greedy policy')
-    parser.add_argument('--episodes', type=int, default=20000, help='Number of episodes')
-    parser.add_argument('--steps', type=int, default=5000, help='Number of steps in each episode')
+    parser.add_argument('--episodes', type=int, default=15000, help='Number of episodes')
+    parser.add_argument('--steps', type=int, default=1000, help='Number of steps in each episode')
     parser.add_argument('--loggin', action='store_true', help='Enable logging')
     parser.add_argument('--plot', action='store_true', help='Enable plotting')
     args = parser.parse_args()
@@ -191,7 +170,7 @@ if __name__ == '__main__':
     steps_plot_values = []
 
     # Initialize the grid
-    grid = Grid(GRID_SIZE, gamma)
+    grid = Grid(GRID_SIZE, gamma=gamma, alpha=alpha , epsilon=epsilon)
     if loggin:
         logging.info(f"Rewards: {grid.rewards}")
         
@@ -200,29 +179,40 @@ if __name__ == '__main__':
         # Initialize s
         state = (0, 0)
         total_reward = 0
+        hitBoundary = False
         for step in range(steps):
             # Choose a from s using policy derived from Q
             action = grid.epsilon_greedy(state, grid.get_actions()[0])
             # Take action a, calc s'
             next_state = (state[0] + grid.get_actions()[1][action][0], state[1] + grid.get_actions()[1][action][1])
             if next_state[0] < 0 or next_state[0] >= GRID_SIZE or next_state[1] < 0 or next_state[1] >= GRID_SIZE:
+                hitBoundary = True
                 next_state = state
-            # reward for action a from state s
-            reward = grid.rewards[(state, action)]
+                reward = -10
+            elif next_state == grid.goal_state:
+                reward = 100
+            else:
+                reward = -1
+
+            if state != grid.goal_state:
+                maxQ = max(grid.Q[next_state].values())
+            else:
+                maxQ = 0
+                reward = 0
+            
             # Q update
-            grid.Q[state][action] = grid.Q[state][action] + alpha * (reward + gamma * max(grid.Q[next_state].values()) - grid.Q[state][action])
+            grid.Q[state][action] = grid.Q[state][action] + alpha * (reward + gamma * maxQ - grid.Q[state][action])
 
             # Update policy to print the optimal policy. The updated policy is not used directly here.
             grid.update_policy(state, action)
             total_reward += reward
+            state = next_state
 
             # Check if the agent hit boundary or reached the goal
-            if next_state == state:
+            if hitBoundary == True:
                 steps_plot_values.append(step)
                 reward_plot_values.append(total_reward)
                 break
-            elif next_state != state:
-                state = next_state
             if state == grid.goal_state:
                 # Set the Q-values for the goal state to 100. This is not required for the Q-learning algorithm. 
                 # if set, the Q-values for the other states go over 100. 
