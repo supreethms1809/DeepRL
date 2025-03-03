@@ -13,6 +13,8 @@ import gymnasium as gym
 import random
 import numpy as np
 from collections import defaultdict
+from tqdm import tqdm
+import datetime
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -61,14 +63,7 @@ class DQN(nn.Module):
             else:
                 self.convQ_target = self.convQ
 
-        # self.denseQ_target = nn.Sequential(
-        #     nn.Linear(input_size, 128),
-        #     nn.ReLU(),
-        #     nn.Linear(128, 128),
-        #     nn.ReLU(),
-        #     nn.Linear(128, output_size)
-        # )
-        self.optimizer = AdamW(self.parameters(), lr=0.001)
+        self.optimizer = AdamW(self.parameters(), lr=0.0001)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
@@ -169,7 +164,7 @@ class DQNAgent(nn.Module):
 if __name__ == "__main__":
     # Starting RL training 
     logger.info("Starting RL training")
-    batch_size = 32
+    batch_size = 64
     env_name = "CarRacing-v3"
     env = gym.make(env_name, lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode=None)
     #env = gym.make(env_name, render_mode="human")
@@ -182,11 +177,11 @@ if __name__ == "__main__":
     Qnw = DQN(env.observation_space.shape[2], env.action_space.n, use_dense=False)
     
     # Initialize the replay buffer
-    buffer_size = 512
+    buffer_size = 1024
     replay_buffer = ReplayBuffer(buffer_size).to(device)
     
-    num_episodes = 100
-    num_steps = 2048
+    num_episodes = 1000
+    num_steps = 100000
     M_update = 512
     reward_plot_values = []
     steps_plot_values = []
@@ -194,7 +189,7 @@ if __name__ == "__main__":
 
     Qnw.to(device)
 
-    for episode in range(num_episodes):
+    for episode in tqdm(range(num_episodes)):
         m = 0
         total_reward = 0
         total_loss = 0
@@ -220,7 +215,7 @@ if __name__ == "__main__":
                 
                 if m == M_update:
                     m = 0
-                    logger.info("Updating Q target in {} steps".format(M_update))
+                    #logger.info("Updating Q target in {} steps".format(M_update))
                     Q_target = Qnw.updateQTarget()
                     Q_target = Q_target.to(device)
                 next_obs = [torch.tensor(next_obs, dtype=torch.float32) for _ in range(batch_size)]
@@ -228,11 +223,13 @@ if __name__ == "__main__":
                 next_obs = next_obs.reshape(next_obs.shape[0], next_obs.shape[3], next_obs.shape[2], next_obs.shape[1])
                 next_obs = next_obs.to(device)
                 current_obs = next_obs
+                total_steps += 1
 
                 if bufferFull:
-                    logger.info("Buffer is full!!! Starting training")
+                    #logger.info("Buffer is full!!! Starting training")
                     # Draw a batch from the replay buffer
-                    batch_size = 32
+                    # Do batch processing
+                    #batch_size = 32
                     num_batches = buffer_size // batch_size
                     batch = [None] * num_batches
                     for i in range(num_batches):
@@ -262,14 +259,15 @@ if __name__ == "__main__":
                         Qnw.optimizer.zero_grad()
                         loss.backward()
                         Qnw.optimizer.step()
-                        batch_reward += reward
+                        batch_reward += torch.max(reward)
                         batch_loss += loss.item()
-                    total_steps += 1
-                    total_reward += batch_reward
-                    total_loss += batch_loss
-                    logger.info("Buffer training done !!!!!Flushing the buffer")
+                    
+                    total_reward += float(batch_reward)
+                    total_loss += float(batch_loss)
+                    #logger.info("Buffer training done !!!!!Flushing the buffer")
                     replay_buffer.flush()
-                        
+                    
+                    ## Perform individual updates for each item in the batch
                     #     for current_obs, action, next_obs, reward in batch:
                     #         # Convert next observation to tensor
                     #         next_obs = torch.tensor(next_obs, dtype=torch.float32).to(device)
@@ -296,11 +294,11 @@ if __name__ == "__main__":
                     #     total_loss += batch_loss
                     # replay_buffer.flush()
 
-                if terminated or step == num_steps - 1:
+                if terminated or truncated or step == num_steps - 1:
                     done = True
                     break
 
-            if terminated:
+            if terminated or truncated:
                 done = True
                 break
 
@@ -310,27 +308,44 @@ if __name__ == "__main__":
             loss_plot_values.append(total_loss)
             steps_plot_values.append(total_steps)
     logger.info("Training complete")
+    # Save model
+    torch.save(Qnw.state_dict(), "Qnw"+str(datetime.datetime.now())+".pth")
+    logger.info("Model saved")
     logger.info("Plotting the results")
     env.close()
     # Plot the results
     import matplotlib.pyplot as plt
-    # reward_plot_values = np.array(reward_plot_values)
-    # loss_plot_values = np.array(loss_plot_values)
-    # steps_plot_values = np.array(steps_plot_values)
-    # plt.plot(reward_plot_values)
-    # plt.xlabel("Episodes")
-    # plt.ylabel("Total reward")
-    # plt.title("Episodes vs Total reward")
-    # plt.show()
+    plt.plot(reward_plot_values)
+    plt.xlabel("Episodes")
+    plt.ylabel("Total reward")
+    plt.title("Episodes vs Total reward")
+    plt.savefig("reward_plot"+str(datetime.datetime.now())+".png")
+    plt.show()
 
     plt.plot(loss_plot_values)
     plt.xlabel("Episodes")
     plt.ylabel("Total loss")
     plt.title("Episodes vs Total loss")
+    plt.savefig("loss_plot"+str(datetime.datetime.now())+".png")
     plt.show()
 
     plt.plot(steps_plot_values)
     plt.xlabel("Episodes")
     plt.ylabel("Total steps")
     plt.title("Episodes vs Total steps")
+    plt.savefig("steps_plot"+str(datetime.datetime.now())+".png")
     plt.show()
+
+    # # Visualize the env
+    # env = gym.make(env_name, lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode="human")
+    # obs, info = env.reset()
+    # # load the model
+    # Qnw.load_state_dict(torch.load("Qnw.pth"))
+    # Qnw.eval()
+    # Qnw.to(device)
+    # logger.info("Starting visualization")
+    # # Initialize the agent
+    # agent = DQNAgent(env).to(device)
+    
+    # env.close()
+    # logger.info("Visualization complete")
