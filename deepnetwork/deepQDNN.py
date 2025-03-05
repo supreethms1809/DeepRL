@@ -63,7 +63,7 @@ class DQN(nn.Module):
             else:
                 self.convQ_target = self.convQ
 
-        self.optimizer = AdamW(self.parameters(), lr=0.0001)
+        self.optimizer = AdamW(self.parameters(), lr=0.000001)
         self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
@@ -117,6 +117,7 @@ class ReplayBuffer(nn.Module):
             bufferFull = False
         return bufferFull
 
+    # TODO: Use yield function to return a batch of data
     def get_batch(self, batch_size):
         return random.sample(self.buffer, batch_size)
     
@@ -147,7 +148,7 @@ class DQNAgent(nn.Module):
         # self.replay_buffer = ReplayBuffer(1000)
 
     def get_action(self, current_obs, Qnw):
-        if np.random.uniform(0,1) < 0.1:
+        if np.random.uniform(0,1) < 0.01:
             return self.env.action_space.sample()
         else:
             with torch.no_grad():
@@ -259,7 +260,7 @@ if __name__ == "__main__":
                         Qnw.optimizer.zero_grad()
                         loss.backward()
                         Qnw.optimizer.step()
-                        batch_reward += torch.max(reward)
+                        batch_reward += reward.sum().item()
                         batch_loss += loss.item()
                     
                     total_reward += float(batch_reward)
@@ -294,7 +295,7 @@ if __name__ == "__main__":
                     #     total_loss += batch_loss
                     # replay_buffer.flush()
 
-                if terminated or truncated or step == num_steps - 1:
+                if terminated or truncated:
                     done = True
                     break
 
