@@ -1,18 +1,16 @@
-from json import load
 import os
 from venv import logger
+from networkx import selfloop_edges
 import numpy as np
 import argparse
 import logging
 import sys
 import logging
-from sympy import Q
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import gymnasium as gym
 import random
-from tqdm import tqdm
 
 # setup logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -38,7 +36,8 @@ class RacingEnv(nn.Module):
         self.gamma = gamma
         self.alpha = alpha
         self.episodes = episodes
-        self.Q = nn.Sequential(
+        
+        self.features = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
@@ -52,17 +51,50 @@ class RacingEnv(nn.Module):
             nn.Dropout(0.5),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128 * 48 * 48, 256),
+            nn.Linear(128 * 48 * 48, 256)).to(device)
+        
+        self.critic = nn.Sequential(
+            self.features,
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(256, output_dim)
-            ).to(device)
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1)).to(device)
+        
+        self.actor = nn.Sequential(
+            self.features,
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, 256),
+            nn.ReLU(),
+            nn.Linear(256, output_dim)).to(device)
 
-        self.Qoptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
-        self.Qloss = nn.MSELoss()
-        self.targetQ = self.Q
+        self.Aoptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
+        self.Coptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
+        self.Aloss = nn.MSELoss()
+        self.targetQ = self.actor
 
     def forward(self, x):
-        return self.Q(x)
+        """
+        Default forward method returning both actor and critic outputs.
+        """
+        actor_out = self.actor(x)
+        critic_out = self.critic(x)
+        return actor_out, critic_out
+
+    # Q network
+    def forward_actor(self, x):
+        """
+        Forward pass for the actor network.
+        """
+        return self.actor(x)
+
+    # Policy network
+    def forward_critic(self, x):
+        """
+        Forward pass for the critic network.
+        """
+        return self.critic(x)
     
     def updatetargetQ(self, source_network):
         """
@@ -73,50 +105,47 @@ class RacingEnv(nn.Module):
     
     def get_Q_target_state_action(self, state, action):
         y = self.targetQ(state).gather(1, action.unsqueeze(1))
-        #logger.info(f"Target Q: {y.shape} and action = {action}")
         return y
     
     def get_Q_state_action(self, state, action):
         y = self.Q(state).gather(1, action.unsqueeze(1))
-        #logger.info(f"Q: {y.shape} and action = {action}")
         return y
     
-# Define Policy network
-class RacingPolicy(nn.Module):
-    def __init__(self, input_dim, output_dim, alpha=0.01):
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.alpha = alpha
-        self.policy = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(0.5),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(128 * 48 * 48, 256),
-            nn.ReLU(),
-            nn.Linear(256, output_dim)
-            ).to(device)
+# # Define Policy network
+# class RacingPolicy(nn.Module):
+#     def __init__(self, input_dim, output_dim, alpha=0.01):
+#         self.input_dim = input_dim
+#         self.output_dim = output_dim
+#         self.alpha = alpha
+#         self.policy = nn.Sequential(
+#             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1),
+#             nn.BatchNorm2d(32),
+#             nn.ReLU(),
+#             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
+#             nn.BatchNorm2d(64),
+#             nn.ReLU(),
+#             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+#             nn.BatchNorm2d(128),
+#             nn.ReLU(),
+#             nn.MaxPool2d(kernel_size=2, stride=2),
+#             nn.Dropout(0.5),
+#             nn.ReLU(),
+#             nn.Flatten(),
+#             nn.Linear(128 * 48 * 48, 256),
+#             nn.ReLU(),
+#             nn.Linear(256, output_dim)
+#             ).to(device)
 
-        self.policyoptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
-        #self.policyloss = nn.CrossEntropyLoss()
+#         self.policyoptimizer = optim.Adam(self.parameters(), lr=alpha)
+#         #self.policyloss = nn.CrossEntropyLoss()
 
-    def forward(self, x):
-        return self.policy(x).softmax(dim=1)
+#     def forward(self, x):
+#         return self.policy(x).softmax(dim=1)
     
 # Define Agent
-class RacingAgent(RacingEnv, RacingPolicy):
+class RacingAgent(RacingEnv):
     def __init__(self, env, input_dim, output_dim, epsilon=0.01, gamma=0.9, alpha=0.01, episodes=100, batch_size=32):
         RacingEnv.__init__(self, env, input_dim, output_dim, epsilon, gamma, alpha, episodes)
-        RacingPolicy.__init__(self, input_dim, output_dim, alpha)
         self.batch_size = batch_size
         self.env = env
         self.epsilon = epsilon
@@ -138,7 +167,7 @@ class RacingAgent(RacingEnv, RacingPolicy):
         steps_per_episode = []
         reward_per_episode = []
         ############### Training loop ################
-        for episode in tqdm(range(self.episodes)):
+        for episode in range(self.episodes):
             tot_loss = 0
             tot_reward = 0
             tot_step = 0
@@ -219,66 +248,52 @@ if __name__ == "__main__":
     gamma = 0.9
     alpha = 0.01
     episodes = 2000
-    batch_size = 128
+    batch_size = 32
     run = True
-    load = False
 
-    if not load:
-        env = gym.make("CarRacing-v3", lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode=None)
-        input_dim = env.observation_space.shape[2]
-        output_dim = env.action_space.n
-        logger.info(f"Input channels: {input_dim}, Output dimension: {output_dim}")
-        agent = RacingAgent(env, input_dim, output_dim, epsilon, gamma, alpha, episodes, batch_size)
-        agent.to(device)
-        loss_per_episode, steps_per_episode, reward_per_episode = agent.train()
-        agent.save("model.pth")
-
-        loss_per_episode = np.array(loss_per_episode)
-        steps_per_episode = np.array(steps_per_episode)
-        reward_per_episode = np.array(reward_per_episode)
+    env = gym.make("CarRacing-v3", lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode=None)
+    input_dim = env.observation_space.shape[2]
+    output_dim = env.action_space.n
+    logger.info(f"Input channels: {input_dim}, Output dimension: {output_dim}")
+    agent = RacingAgent(env, input_dim, output_dim, epsilon, gamma, alpha, episodes, batch_size)
+    agent.to(device)
+    loss_per_episode, steps_per_episode, reward_per_episode = agent.train()
+    agent.save("model.pth")
     
-        # Plot the results
-        import matplotlib.pyplot as plt
-        import datetime
-        plt.plot(reward_per_episode)
-        plt.xlabel("Episodes")
-        plt.ylabel("Total reward")
-        plt.title("Episodes vs Total reward")
-        plt.savefig("reward_plot"+str(datetime.datetime.now())+".png")
-        plt.show()
+    # Plot the results
+    import matplotlib.pyplot as plt
+    import datetime
+    plt.plot(reward_per_episode)
+    plt.xlabel("Episodes")
+    plt.ylabel("Total reward")
+    plt.title("Episodes vs Total reward")
+    plt.savefig("reward_plot"+str(datetime.datetime.now())+".png")
+    plt.show()
 
-        plt.plot(loss_per_episode)
-        plt.xlabel("Episodes")
-        plt.ylabel("Total loss")
-        plt.title("Episodes vs Total loss")
-        plt.savefig("loss_plot"+str(datetime.datetime.now())+".png")
-        plt.show()
+    plt.plot(loss_per_episode)
+    plt.xlabel("Episodes")
+    plt.ylabel("Total loss")
+    plt.title("Episodes vs Total loss")
+    plt.savefig("loss_plot"+str(datetime.datetime.now())+".png")
+    plt.show()
 
-        plt.plot(steps_per_episode)
-        plt.xlabel("Episodes")
-        plt.ylabel("Total steps")
-        plt.title("Episodes vs Total steps")
-        plt.savefig("steps_plot"+str(datetime.datetime.now())+".png")
-        plt.show()
+    plt.plot(steps_per_episode)
+    plt.xlabel("Episodes")
+    plt.ylabel("Total steps")
+    plt.title("Episodes vs Total steps")
+    plt.savefig("steps_plot"+str(datetime.datetime.now())+".png")
+    plt.show()
 
-        env.close()
+    env.close()
 
-        logger.info("Training completed")
-    
-    if load:
-        env = gym.make("CarRacing-v3", lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode="human")
-        input_dim = env.observation_space.shape[2]
-        output_dim = env.action_space.n
-        # Make sure you initialize the model with the same parameters:
-        agent = RacingAgent(env, input_dim, output_dim, epsilon, gamma, alpha, episodes, batch_size=1)
-        agent.load_state_dict(torch.load("model.pth"))
-        agent.to(device)
+    logger.info("Training completed")
     
     if run:
+        env = gym.make("CarRacing-v3", lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode="human")
         state = env.reset()
         state = torch.tensor(state[0], dtype=torch.float32).to(device)
         state = torch.permute(state, (2, 1, 0))
-        state = state.unsqueeze(0).repeat(1, 1, 1, 1)
+        state = state.unsqueeze(0).repeat(batch_size, 1, 1, 1)
         done = False
         while not done:
             action = agent.get_action(state)
@@ -287,9 +302,8 @@ if __name__ == "__main__":
             ns, re, terminated_array, truncated_array, _ = env.step(action_array[0])
             if np.any(terminated_array) or np.any(truncated_array):
                 done = True
-            ns_t = torch.tensor(ns, dtype=torch.float32).unsqueeze(1).to(device)
-            #logger.info(f"Reward: {ns_t.shape}")
-            ns_t = torch.permute(ns_t, (1, 3, 0, 2)).contiguous()
+            ns_t = torch.tensor(ns, dtype=torch.float32).to(device)
+            ns_t = torch.permute(ns_t, (0, 3, 1, 2)).contiguous()
             state = ns_t
         env.close()
         logger.info("Testing completed")
