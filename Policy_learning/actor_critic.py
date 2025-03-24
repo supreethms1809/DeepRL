@@ -137,6 +137,7 @@ class RacingAgent(RacingEnv, RacingPolicy):
         loss_per_episode = []
         steps_per_episode = []
         reward_per_episode = []
+        save_checkpoint = False
         ############### Training loop ################
         for episode in tqdm(range(self.episodes)):
             tot_loss = 0
@@ -160,8 +161,8 @@ class RacingAgent(RacingEnv, RacingPolicy):
                 action_array = action
                 action_array = action_array.cpu().numpy()
                 for n in range(self.batch_size):
-                    ns[n], re[n], terminated_array, truncated_array, _ = self.env.step(action_array[n])
-                if np.any(terminated_array) or np.any(truncated_array):
+                    ns[n], re[n], terminated_array[n], truncated_array[n], _ = self.env.step(action_array[n])
+                if np.all(terminated_array) or np.all(truncated_array):
                     done = True
                 ns_t = torch.tensor(ns, dtype=torch.float32).to(device)
                 ns_t = torch.permute(ns_t, (0, 3, 1, 2)).contiguous()
@@ -193,7 +194,7 @@ class RacingAgent(RacingEnv, RacingPolicy):
                 self.policyoptimizer.step()
 
                 # Update state
-                state = ns_t
+                state.copy_(ns_t)
                 step += 1
 
                 # Update target Q network
@@ -205,6 +206,10 @@ class RacingAgent(RacingEnv, RacingPolicy):
             loss_per_episode.append(tot_loss)
             steps_per_episode.append(step)
             reward_per_episode.append(tot_reward)
+            if tot_reward > 50 and tot_loss < 0.1:
+                save_checkpoint = True
+                logger.info(f"Saving checkpoint at episode {episode}")
+                self.save(f"{self.episodes}"+"{episode}" +"model.pth")
             if episode % 10 == 0:
                 logger.info(f"Episode: {episode}, Loss: {tot_loss}, Steps: {step}, Reward: {tot_reward}")
 
@@ -217,9 +222,9 @@ if __name__ == "__main__":
 
     epsilon = 0.01
     gamma = 0.9
-    alpha = 0.01
-    episodes = 2000
-    batch_size = 128
+    alpha = 0.001
+    episodes = 1000
+    batch_size = 1
     run = True
     load = False
 
@@ -231,30 +236,31 @@ if __name__ == "__main__":
         agent = RacingAgent(env, input_dim, output_dim, epsilon, gamma, alpha, episodes, batch_size)
         agent.to(device)
         loss_per_episode, steps_per_episode, reward_per_episode = agent.train()
-        agent.save("model.pth")
+        agent.save(f"{episodes}" +"model.pth")
+        logger.info(f"loss_per_episode: {loss_per_episode[0]}")
+        
+        reward_per_episode_np = [r.cpu().detach().numpy() if torch.is_tensor(r) else r for r in reward_per_episode]
+        loss_per_episode_np = [l if not torch.is_tensor(l) else l.cpu().detach().numpy() for l in loss_per_episode]
+        steps_per_episode_np = [s if not torch.is_tensor(s) else s.cpu().detach().numpy() for s in steps_per_episode]
 
-        loss_per_episode = np.array(loss_per_episode)
-        steps_per_episode = np.array(steps_per_episode)
-        reward_per_episode = np.array(reward_per_episode)
-    
         # Plot the results
         import matplotlib.pyplot as plt
         import datetime
-        plt.plot(reward_per_episode)
+        plt.plot(reward_per_episode_np)
         plt.xlabel("Episodes")
         plt.ylabel("Total reward")
         plt.title("Episodes vs Total reward")
         plt.savefig("reward_plot"+str(datetime.datetime.now())+".png")
         plt.show()
 
-        plt.plot(loss_per_episode)
+        plt.plot(loss_per_episode_np)
         plt.xlabel("Episodes")
         plt.ylabel("Total loss")
         plt.title("Episodes vs Total loss")
         plt.savefig("loss_plot"+str(datetime.datetime.now())+".png")
         plt.show()
 
-        plt.plot(steps_per_episode)
+        plt.plot(steps_per_episode_np)
         plt.xlabel("Episodes")
         plt.ylabel("Total steps")
         plt.title("Episodes vs Total steps")
@@ -266,7 +272,7 @@ if __name__ == "__main__":
         logger.info("Training completed")
     
     if load:
-        env = gym.make("CarRacing-v3", lap_complete_percent=0.95, domain_randomize=False, continuous=False, render_mode="human")
+        env = gym.make("CarRacing-v3", domain_randomize=False, continuous=False, render_mode="human")
         input_dim = env.observation_space.shape[2]
         output_dim = env.action_space.n
         # Make sure you initialize the model with the same parameters:
@@ -275,6 +281,7 @@ if __name__ == "__main__":
         agent.to(device)
     
     if run:
+        step = 0
         state = env.reset()
         state = torch.tensor(state[0], dtype=torch.float32).to(device)
         state = torch.permute(state, (2, 1, 0))
@@ -285,11 +292,13 @@ if __name__ == "__main__":
             action_array = action
             action_array = action_array.cpu().numpy()
             ns, re, terminated_array, truncated_array, _ = env.step(action_array[0])
-            if np.any(terminated_array) or np.any(truncated_array):
+            #if np.all(terminated_array) or np.all(truncated_array):
+            if step == 10000:
                 done = True
             ns_t = torch.tensor(ns, dtype=torch.float32).unsqueeze(1).to(device)
             #logger.info(f"Reward: {ns_t.shape}")
             ns_t = torch.permute(ns_t, (1, 3, 0, 2)).contiguous()
-            state = ns_t
+            state.copy_(ns_t)
+            step += 1
         env.close()
         logger.info("Testing completed")
