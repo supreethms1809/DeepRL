@@ -47,32 +47,27 @@ class RacingEnv(nn.Module):
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
+            nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Dropout(0.5),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(128 * 48 * 48, 256)).to(device)
+            nn.Linear(256 * 48 * 48, 512)).to(device)
         
         self.critic = nn.Sequential(
             self.features,
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1)).to(device)
+            nn.Linear(512, output_dim)).to(device)
         
         self.actor = nn.Sequential(
             self.features,
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, 256),
-            nn.ReLU(),
-            nn.Linear(256, output_dim)).to(device)
+            nn.Linear(512, output_dim)).to(device)
 
         self.Aoptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
-        self.Coptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
+        #self.Coptimizer = optim.AdamW(self.parameters(), lr=self.alpha, weight_decay=1e-2, betas=(0.9, 0.99))
         self.Aloss = nn.MSELoss()
-        self.targetQ = self.actor
+        self.targetQ = self.actor.copy()
 
     def forward(self, x):
         """
@@ -111,37 +106,6 @@ class RacingEnv(nn.Module):
         y = self.Q(state).gather(1, action.unsqueeze(1))
         return y
     
-# # Define Policy network
-# class RacingPolicy(nn.Module):
-#     def __init__(self, input_dim, output_dim, alpha=0.01):
-#         self.input_dim = input_dim
-#         self.output_dim = output_dim
-#         self.alpha = alpha
-#         self.policy = nn.Sequential(
-#             nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, stride=1, padding=1),
-#             nn.BatchNorm2d(32),
-#             nn.ReLU(),
-#             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
-#             nn.BatchNorm2d(64),
-#             nn.ReLU(),
-#             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-#             nn.BatchNorm2d(128),
-#             nn.ReLU(),
-#             nn.MaxPool2d(kernel_size=2, stride=2),
-#             nn.Dropout(0.5),
-#             nn.ReLU(),
-#             nn.Flatten(),
-#             nn.Linear(128 * 48 * 48, 256),
-#             nn.ReLU(),
-#             nn.Linear(256, output_dim)
-#             ).to(device)
-
-#         self.policyoptimizer = optim.Adam(self.parameters(), lr=alpha)
-#         #self.policyloss = nn.CrossEntropyLoss()
-
-#     def forward(self, x):
-#         return self.policy(x).softmax(dim=1)
-    
 # Define Agent
 class RacingAgent(RacingEnv):
     def __init__(self, env, input_dim, output_dim, epsilon=0.01, gamma=0.9, alpha=0.01, episodes=100, batch_size=32):
@@ -159,7 +123,7 @@ class RacingAgent(RacingEnv):
         else:
             #logger.info(f"Policy: {self.policy(state).argmax(dim=1)}")
             with torch.no_grad():
-                t_action = self.policy(state).argmax(dim=1)
+                t_action = self.critic(state).argmax(dim=1)
         return t_action
 
     def train(self):
@@ -171,15 +135,11 @@ class RacingAgent(RacingEnv):
             tot_loss = 0
             tot_reward = 0
             tot_step = 0
+            batch_size = self.batch_size
             state = self.env.reset()
             state = torch.tensor(state[0], dtype=torch.float32).to(device)
             state = torch.permute(state, (2, 1, 0))
-            state = state.unsqueeze(0).repeat(self.batch_size, 1, 1, 1)
             done = False
-            ns = np.ndarray((self.batch_size, 96, 96, 3))
-            re = np.ndarray((self.batch_size, 1))
-            terminated_array = np.zeros((self.batch_size, 1))
-            truncated_array = np.zeros((self.batch_size, 1))
             step = 0
 
             logger.info(f"Episode: {episode}")
