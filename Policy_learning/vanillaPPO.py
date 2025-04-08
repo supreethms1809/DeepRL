@@ -3,11 +3,11 @@ import torch
 import trl
 import torch.nn as nn
 import torch.optim as optim
-import gymnasium as gym
 import random
 import os
 import logging
 import sys
+import re
 
 # setup logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,7 +26,7 @@ torch.manual_seed(42)
 if device == 'cuda':
     torch.cuda.manual_seed_all(42)
 elif device == 'mps':
-    torch.mps.manual_seed_all(42)
+    torch.mps.manual_seed(42)
 else:
     torch.manual_seed(42)
 
@@ -35,31 +35,87 @@ from datasets import Dataset, load_dataset
 
 # Load the dataset
 ds = load_dataset("open-r1/codeforces")
+ds_code = Dataset.load_from_disk("/Users/ssuresh/aiml/SPring2025/Reinforcement_learning/dataset/babeltower")
+ds_code = ds_code.select(range(100))
+
+logger.info(f"Dataset: {ds_code}")
 
 class PPOAgent():
+    def __init__(self):
+        self.actor = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", torch_dtype=torch.float32)
+        self.tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
+        self.optimizer = optim.AdamW(self.actor.parameters(), lr=1e-5, eps=1e-8, weight_decay=0.01, betas=(0.9, 0.999))
+        self.trainergrpo = None
+        self.template = ("Convert C/C++ Code to CUDA. Provide the answer in the following format <think> {think} </think> <analysis> {analysis} </analysis> <code> {code} </code>\n"
+                         "Input code  \n" 
+                         "<input_code>"
+                         )
+
+    @staticmethod
+    def reward_structured_format(completions, **kwargs):
+        rewards = []
+
+        for completion in completions:
+            reward = 0
+
+            # 1. Check if all tags are present
+            has_think = bool(re.search(r"<think>.*?</think>", completion, re.DOTALL))
+            has_answer = bool(re.search(r"<analysis>.*?</analysis>", completion, re.DOTALL))
+            has_code = bool(re.search(r"<code>.*?</code>", completion, re.DOTALL))
+
+            if has_think: reward += 1
+            if has_answer: reward += 1
+            if has_code: reward += 1
+
+            # 2. Check tag order (think → analysis → code)
+            tag_order = ["<think>", "<analysis>", "<code>"]
+            tag_positions = [completion.find(tag) for tag in tag_order]
+
+            if all(pos != -1 for pos in tag_positions) and tag_positions == sorted(tag_positions):
+                reward += 1  # bonus for correct ordering
+
+            # 3. Penalize malformed tags
+            total_open_tags = sum(completion.count(f"<{tag}>") for tag in ["think", "analysis", "code"])
+            total_close_tags = sum(completion.count(f"</{tag}>") for tag in ["think", "analysis", "code"])
+            if total_open_tags != 3 or total_close_tags != 3:
+                reward -= 1  # structural issue
+
+            rewards.append(reward)
+
+        return rewards
+        
+    def create_grpo_trainer(self, ds_code):
+        training_args = trl.GRPOConfig(
+            output_dir="ppo_output",
+            logging_steps=10,
+        )
+        self.trainergrpo = trl.GRPOTrainer(
+            self.actor,
+            reward_funcs=self.reward_structured_format,
+            train_dataset=ds_code,
+            args =training_args,
+            optimizers=(self.optimizer, None)
+        )
+        return self.trainergrpo
+    
+    def apply_template(self, ds_code):
+        def replace_code(example):
+            prompt = self.template.replace("<input_code>", example.get("code", ""))
+            return {"prompt": prompt}
+        
+        new_ds_code = ds_code.map(replace_code)
+
+        return new_ds_code
+        
     def learn(self):
         pass
-
-class ActorCritic(nn.Module):
-    def __init__(self,output_dim):
-        super(ActorCritic, self).__init__()
-        # This is my base model - policy
-        self.actor = nn.Sequential(
-            nn.TransformerDecoder(nn.TransformerDecoderLayer(d_model=768, nhead=8), num_layers=6),
-            nn.Linear(768, output_dim)
-        )
-        self.critic = nn.Sequential(
-            nn.TransformerDecoder(nn.TransformerDecoderLayer(d_model=768, nhead=8), num_layers=6),
-            nn.Linear(768, 1)
-        )
-    
-    def forward(self, x):
-        actor_out = self.actor(x)
-        critic_out = self.critic(x)
-        return actor_out, critic_out
-    
-ac = ActorCritic()
-logger.info(f"ActorCritic model: {ac}")
+ 
+agent = PPOAgent()
+ds_code = agent.apply_template(ds_code)
+ds_code = ds_code.remove_columns(["identifier", "code"])
+grpotrainer = agent.create_grpo_trainer(ds_code)
+logger.info(f"ActorCritic model: {grpotrainer}")
+grpotrainer.train()
 
 
        
