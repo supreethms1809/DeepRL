@@ -1,3 +1,4 @@
+import grp
 from venv import logger
 import torch
 import trl
@@ -35,21 +36,24 @@ from datasets import Dataset, load_dataset
 
 # Load the dataset
 ds = load_dataset("open-r1/codeforces")
-ds_code = Dataset.load_from_disk("/Users/ssuresh/aiml/SPring2025/Reinforcement_learning/dataset/babeltower")
-ds_code = ds_code.select(range(100))
+ds_code = Dataset.load_from_disk("/home/sureshm/DeepRL/dataset/babeltower")
+#ds_code = ds_code.select(range(100))
 
 logger.info(f"Dataset: {ds_code}")
 
 class PPOAgent():
     def __init__(self):
-        self.actor = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", torch_dtype=torch.float32)
+        self.actor = AutoModelForCausalLM.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
         self.tokenizer = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
         self.optimizer = optim.AdamW(self.actor.parameters(), lr=1e-5, eps=1e-8, weight_decay=0.01, betas=(0.9, 0.999))
         self.trainergrpo = None
+        self.actor.train()
         self.template = ("Convert C/C++ Code to CUDA. Provide the answer in the following format <think> {think} </think> <analysis> {analysis} </analysis> <code> {code} </code>\n"
                          "Input code  \n" 
                          "<input_code>"
                          )
+        for param in self.actor.parameters():
+            param.requires_grad = True
 
     @staticmethod
     def reward_structured_format(completions, **kwargs):
@@ -86,8 +90,11 @@ class PPOAgent():
         
     def create_grpo_trainer(self, ds_code):
         training_args = trl.GRPOConfig(
-            output_dir="ppo_output",
-            logging_steps=10,
+            output_dir="grpo_output",
+            logging_steps=100,
+            save_steps=1000,
+            num_train_epochs=1,
+            do_train = True,
         )
         self.trainergrpo = trl.GRPOTrainer(
             self.actor,
@@ -115,7 +122,5 @@ ds_code = agent.apply_template(ds_code)
 ds_code = ds_code.remove_columns(["identifier", "code"])
 grpotrainer = agent.create_grpo_trainer(ds_code)
 logger.info(f"ActorCritic model: {grpotrainer}")
-grpotrainer.train()
-
-
-       
+grpotrainer.train(resume_from_checkpoint=True)
+#grpotrainer.save_model("ppo_output")
