@@ -190,16 +190,16 @@ class Pendulum:
             #self.action = u_t
 
             # Calculate Quu and Qux, Qxu and Qxx
-            Quu = Q_t[4:5, 4:5]
-            Qux = Q_t[4:5, 0:4]
-            Qxu = Q_t[0:4, 4:5]
-            Qxx = Q_t[0:4, 0:4]
-            qx = sp.Matrix(q_t[0:4])
-            qu = sp.Matrix(q_t[4:5])
+            Quu = Q_t.extract(range(4, 5), range(4, 5))
+            Qux = Q_t.extract(range(4, 5), range(0, 4))
+            Qxu = Q_t.extract(range(0, 4), range(4, 5))
+            Qxx = Q_t.extract(range(0, 4), range(0, 4))
+            qx = q_t.extract(range(0, 4), [0])
+            qu = q_t.extract(range(4, 5), [0])
 
             # Calculate K_t and k_t]
-            K_t = -sp.Inverse(Quu) @ Qux
-            k_t = -sp.Inverse(Quu) @ qu
+            K_t = (-sp.Inverse(Quu) @ Qux)
+            k_t = (-sp.Inverse(Quu) @ qu)
 
             # Calculate V_t and v_t
             V_t = Qxx + Qxu @ K_t + K_t.T @ Qux + K_t.T @ Quu @ K_t
@@ -236,22 +236,13 @@ class Pendulum:
 if __name__ == "__main__":
     data = simData()
     pendulum = Pendulum(data)
-    debug_log = False
-    if debug_log:
-        print("Pendulum parameters:", data)
-        print("Initial state:", pendulum.state)
-        print("Desired state:", pendulum.desired_state)
-        print("Dynamics:", pendulum.dynamics(pendulum.state, np.array([[0]])))  # Example action
-        print("Pendulum simulation complete.")
-
     output, history = pendulum.LQRBackwardForwardRecursion()
-    
-    # # Print the output
-    # print("Output:")
-    # for key, value in output.items():
-    #     if key == 'k_t':
-    #         print(f"{key}: {value}")
-    #         exit()
+
+    print("Simulation results:")
+    for key, value in output.items():
+        if key == 'u_t':
+            print(f"{key}: {value}")
+            exit()
 
     # Simulate the pendulum dynamics
     pendulum.simulate(dynamics="linear", output=output)
