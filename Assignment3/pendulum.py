@@ -133,29 +133,18 @@ class Pendulum:
         times = [step['time'] for step in trajectory]
         states = np.array([step['state'].flatten() for step in trajectory])
         actions = np.array([step['action'].flatten() for step in trajectory])
-
-        fig, axs = plt.subplots(2, 1, figsize=(12, 10))
         
         # Plot state evolution: x, v, theta, omega
-        axs[0].plot(times, states[:, 0], label='x (position)')
-        axs[0].plot(times, states[:, 1], label='v (velocity)')
-        axs[0].plot(times, states[:, 2], label='θ (angle)')
-        axs[0].plot(times, states[:, 3], label='ω (angular velocity)')
-        axs[0].set_xlabel('Time (s)')
-        axs[0].set_ylabel('State values')
-        axs[0].set_title('Evolution of State Variables')
-        axs[0].legend()
-        axs[0].grid(True)
-        
-        # Plot control signals
-        axs[1].plot(times, actions[:, 0], label='u (control input)')
-        axs[1].set_xlabel('Time (s)')
-        axs[1].set_ylabel('Control input')
-        axs[1].set_title('Control Signal Evolution')
-        axs[1].legend()
-        axs[1].grid(True)
-        
-        plt.tight_layout()
+        plt.plot(times, states[:, 0], label='x (position)')
+        plt.plot(times, states[:, 1], label='v (velocity)')
+        plt.plot(times, states[:, 2], label='θ (angle)')
+        plt.plot(times, states[:, 3], label='ω (angular velocity)')
+        plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--')
+        plt.xlabel('Time (s)')
+        plt.ylabel('State and Action values')
+        plt.title('Pendulum Simulation Results')
+        plt.legend()
+        plt.grid(True)
         plt.show()
 
     def LQRBackwardForwardRecursion(self):
@@ -244,22 +233,18 @@ class Pendulum:
 
             # Calculate Vofx_t 
             Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ v_t
-
-            next_state = self.lin_dynamics(current_state, current_action)
+            V_t_plus_1 = V_t
+            v_t_plus_1 = v_t
             
             # Store the results
             #print(f"Current State: {current_state}, Current Action: {current_action}, Next State: {next_state}")
             output = {
                 'time': t,
-                'state': current_state,
                 'K_t': K_t,
                 'k_t': k_t,
             }
 
             self.output.insert(0,output)
-
-            current_state = next_state
-            current_action = next_action
             self.time -= self.data.dt
         
         print("Forward Recursion")
