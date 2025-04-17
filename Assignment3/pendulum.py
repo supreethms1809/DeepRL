@@ -100,25 +100,24 @@ class Pendulum:
         
         self.reset()
         # Simulate the pendulum dynamics
-        self.current_state = self.data.initial_state
-        self.current_action = self.start_action
+        current_state = self.data.initial_state
+        current_action = self.start_action
         self.time = 0.0
 
-        for t in range(0, self.time, self.time_steps):
-            # Save time and state
-            self.trajectory['step'].append(t)
-            self.trajectory['time'].append(self.time)
-            
+        for t in range(self.time_steps):
             # Get the current state and action
-            self.current_action = output['u_t'][t]
-            self.next_state = self.dynamics(self.current_state, self.current_action)
+            current_action = output[t]['u_t']
+            next_state = self.dynamics(current_state, current_action)
 
             # Store the trajectory
-            self.trajectory['state'].append(np.array(self.current_state, dtype = np.float32).flatten())
-            self.trajectory['action'].append(np.array(self.current_action, dtype = np.float32).flatten())
-            self.trajectory['next_state'].append(np.array(self.next_state, dtype = np.float32).flatten())
-            
-            self.current_state = self.next_state
+            self.trajectory.append({
+                'time': self.time,
+                'state': current_state,
+                'action': current_action,
+                'next_state': next_state
+            })
+
+            current_state = next_state
             self.time += self.data.dt
         
         return self.trajectory
@@ -129,21 +128,34 @@ class Pendulum:
         self.time = 0.0
 
     # Plot the results of the simulation
-    def plot_results(self):
-        # Plot the results
-        history = np.array(self.outputwithaction)
-        #print("History shape:", history.shape)
-        #print("History:", history)
-        plt.figure(figsize=(10, 5))
-        plt.plot(history[:, 0], label='x (position)')
-        plt.plot(history[:, 1], label='v (velocity)')
-        plt.plot(history[:, 2], label='theta (angle)')
-        plt.plot(history[:, 3], label='w (angular velocity)')
-        plt.xlabel('Time steps')
-        plt.ylabel('State values')
-        plt.title('Pendulum Dynamics Simulation')
-        plt.legend()
-        plt.grid()
+    def plot_simulation_results(self, trajectory):
+        import matplotlib.pyplot as plt
+        times = [step['time'] for step in trajectory]
+        states = np.array([step['state'].flatten() for step in trajectory])
+        actions = np.array([step['action'].flatten() for step in trajectory])
+
+        fig, axs = plt.subplots(2, 1, figsize=(12, 10))
+        
+        # Plot state evolution: x, v, theta, omega
+        axs[0].plot(times, states[:, 0], label='x (position)')
+        axs[0].plot(times, states[:, 1], label='v (velocity)')
+        axs[0].plot(times, states[:, 2], label='θ (angle)')
+        axs[0].plot(times, states[:, 3], label='ω (angular velocity)')
+        axs[0].set_xlabel('Time (s)')
+        axs[0].set_ylabel('State values')
+        axs[0].set_title('Evolution of State Variables')
+        axs[0].legend()
+        axs[0].grid(True)
+        
+        # Plot control signals
+        axs[1].plot(times, actions[:, 0], label='u (control input)')
+        axs[1].set_xlabel('Time (s)')
+        axs[1].set_ylabel('Control input')
+        axs[1].set_title('Control Signal Evolution')
+        axs[1].legend()
+        axs[1].grid(True)
+        
+        plt.tight_layout()
         plt.show()
 
     def LQRBackwardForwardRecursion(self):
@@ -162,9 +174,10 @@ class Pendulum:
         # Cost function J = sigma (x_t^T Q x_t + u_t^T R u_t)
         cost_func = state.T @ Q @ state +  action.T @ R @ action
 
+        # Calculate the Jacobian and Hessian - partial derivatives
         variables = state.col_join(action)
         # F_t = del x_t f(x_t,u_t), f_t = del u_t f(x_t,u_t)
-        F_t_dir = f_x_u.jacobian(state)
+        F_t_dir = f_x_u.jacobian(variables)
         fl_t_dir = f_x_u.jacobian(action)
         
         # C_t = doubledel x_t cost_func, c_t = del u_t cost_func
@@ -189,16 +202,9 @@ class Pendulum:
         cl_t_numeric = cl_t_dir.subs(subs_dict).evalf()
         cl_t = np.array(cl_t_numeric, dtype=np.float64)
 
-        print(f"C_t shape: {C_t}")
-        print(f"c_t shape: {cl_t}")
-        # F_t = F_t_numpy[:, :4]
-        # f_t = F_t_numpy[:, 4:]
-        # C_t = C_t_numpy[:4, :4]
-        # c_t = c_t_numpy[:4]
-
         # set the initial state and action
-        self.current_state = self.initial_state
-        self.current_action = self.start_action
+        current_state = self.desired_state
+        current_action = self.start_action
 
         # Define V_t+1 and v_t+1
         V_t_plus_1 = np.zeros((4, 4))
@@ -213,16 +219,14 @@ class Pendulum:
             q_t = cl_t + F_t.T @ V_t_plus_1 @ fl_t + F_t.T @ v_t_plus_1
 
             # Calculate Q(x_t,u_t)
-            vecstate = self.current_state
+            vecstate = np.concatenate((current_state, current_action), axis=0)
             Qofx_t_u_t = 0.5 * (vecstate).T @ Q_t @ (vecstate) + vecstate.T @ q_t
 
             # Calculate u_t
             u_t = np.argmin(Qofx_t_u_t)
-            self.next_action = np.array([[u_t]], dtype=np.float64)
+            next_action = np.array([[u_t]], dtype=np.float64)
 
             # Calculate Quu and Qux, Qxu and Qxx
-            print("Q_t shape:", Q_t.shape)
-            print("Q_t:", Q_t.__class__)
             Quu = Q_t[4:5, 4:5]
             Qux = Q_t[4:5, 0:4]
             Qxu = Q_t[0:4, 4:5]
@@ -239,64 +243,63 @@ class Pendulum:
             v_t = qx + Qxu @ k_t + K_t.T @ qu + K_t.T @ Quu @ k_t
 
             # Calculate Vofx_t 
-            Vofx_t = 0.5 * self.current_state.T @ V_t @ self.current_state + self.current_state.T @ v_t
+            Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ v_t
 
-            self.next_state = self.lin_dynamics(self.current_state, self.current_action)
+            next_state = self.lin_dynamics(current_state, current_action)
             
             # Store the results
+            #print(f"Current State: {current_state}, Current Action: {current_action}, Next State: {next_state}")
             output = {
                 'time': t,
-                'state': self.current_state,
+                'state': current_state,
                 'K_t': K_t,
                 'k_t': k_t,
             }
 
             self.output.insert(0,output)
 
-            self.current_state = self.next_state
-            self.current_action = self.next_action
+            current_state = next_state
+            current_action = next_action
             self.time -= self.data.dt
         
         print("Forward Recursion")
         # Run the forward recursion
-        self.state = self.desired_state
+        #state = self.desired_state
+        current_state = self.initial_state
         self.time = 0
         for t in range(self.time_steps):
-            matching_elements = [entry for entry in self.output if entry['time'] == self.time]
-            print("Matching elements:", matching_elements)
-            if matching_elements:
-                K_t = matching_elements[0]['K_t']
-                k_t = matching_elements[0]['k_t']
-                state = matching_elements[0]['state']
-            else:
-                raise ValueError("No matching elements found in output")
-            u_t = K_t @ state + k_t
+            # Get the current state and action
+            K_t = self.output[t]['K_t']
+            k_t = self.output[t]['k_t']
+
+            u_t = K_t @ current_state + k_t
             action = u_t
-            print("Action:", u_t)
-            self.state = self.lin_dynamics(state, action)
+            next_state = self.lin_dynamics(current_state, action)
             # Store the results
             output = {
                 'time': t,
-                'state': self.current_state,
+                'state': current_state,
                 'K_t': K_t,
                 'k_t': k_t,
                 'u_t': u_t,
             }
-
+            current_state = next_state
             self.time += self.data.dt
             self.outputwithaction.append(output)
 
-        return self.output 
+        return self.outputwithaction 
 
 if __name__ == "__main__":
     data = simData()
     pendulum = Pendulum(data)
-    output, history = pendulum.LQRBackwardForwardRecursion()
+    output = pendulum.LQRBackwardForwardRecursion()
 
     # Simulate the pendulum dynamics
     trajectory = pendulum.simulate(dynamics="linear", output=output)
     with open("pendulum_simulation.txt", "w") as f:
-        for key, value in trajectory.items():
-            f.write(f"{key}: {value}\n")
+        for step in trajectory:
+            f.write(f"Time: {step['time']}, State: {step['state']}, Action: {step['action']}, Next State: {step['next_state']}\n")
 
     #pendulum.simulate(dynamics="non-linear", output=output)
+    # Plot the results
+    pendulum.plot_simulation_results(trajectory)
