@@ -19,7 +19,7 @@ class simData:
     # Parameters for the simulation
     dt: float = 0.001 # time step
     T: float = 20 # total simulation time
-    initial_state: np.ndarray = field(default_factory=lambda: np.array([[2], [1], [2], [1]])) # initial state
+    initial_state: np.ndarray = field(default_factory=lambda: np.array([[2], [0], [2], [0]])) # initial state
     desired_state: np.ndarray = field(default_factory=lambda: np.array([[0], [0], [0], [0]])) # desired state
 
     # A: np.ndarray = np.array([[0, 1, 0, 0],
@@ -31,24 +31,36 @@ class simData:
     
 class Pendulum:
     def __init__(self, data: simData):
+        # Data given
         self.data = data
         self.initial_state = data.initial_state
         self.desired_state = data.desired_state
-        self.state = None
-        self.action = None
-        self.desired_action = np.zeros((1, 1))
+
+        # local variables
+        self.current_state = None
+        self.current_action = None
+        self.next_state = None
+        self.next_action = None
+        self.start_action = np.zeros((1, 1))
         self.time = 0
         self.time_steps = int(self.data.T / self.data.dt)
-        self.history = []
+
+        # A and B matrices for continious time system
         self.A = np.array([[0, 1, 0, 0],
                               [0, -self.data.d/self.data.M, (self.data.b*self.data.m*self.data.g)/self.data.M, 0],
                               [0, 0, 0, 1],
                               [0, (-self.data.b*self.data.d)/self.data.M*self.data.L, (-self.data.b*(self.data.M+self.data.m))*self.data.g/(self.data.M * self.data.L), 0]])
         self.B = np.array([[0], [1/self.data.M], [0], [self.data.b/(self.data.L*self.data.M)]])
+
+        # A and B for discrete time system
         self.Ad, self.Bd = self.c2d()
+
+        # State cost matrix
         self.Q  = np.eye(4)  # State cost matrix
         self.R = 0.01 * np.eye(1)
 
+        # Outputs
+        self.history = []
         self.output = {
             'time': [],
             'Q_t': [],
@@ -62,17 +74,25 @@ class Pendulum:
             'Vofx_t': []
         }
 
+        self.trajectory = {
+            'step': [],
+            'time': [],
+            'state': [],
+            'action': [],
+            'next_state' : []
+        }
+
         
 
     # convert continuous-time system to discrete-time system
     def c2d(self):
-        A_d, B_d, _, _, _ = cont2discrete((self.A, self.B,None,None), self.data.dt)
-        return A_d, B_d
+        Ad, Bd, _, _, _ = cont2discrete((self.A, self.B,None,None), self.data.dt)
+        return Ad, Bd
 
     # Dynamics function - non-linear
     def non_linear_dynamics(self, state, action):
         x1, x2, x3, x4 = np.array(state).flatten()
-        x,v,theta,w = np.array(state).flatten()
+        x, v, theta, w = np.array(state).flatten()
         m, M, L, g, d, b = self.data.m, self.data.M, self.data.L, self.data.g, self.data.d, self.data.b
         u = np.array(action).flatten()
         dx1 = dx = v
@@ -98,18 +118,30 @@ class Pendulum:
         else:
             raise ValueError("Dynamics must be 'linear' or 'non-linear'")
         
-        self.reset()  
+        self.reset()
         # Simulate the pendulum dynamics
-        self.state = self.data.initial_state
+        self.current_state = self.data.initial_state
+        self.current_action = self.start_action
         self.time = 0
-        self.history.append(np.array(self.state).flatten())
+
         for t in range(self.time_steps):
-            self.action = output['u_t'][t]
-            self.next_state = self.dynamics(self.state, self.action)
-            self.history.append(np.array(self.state).flatten())
-            self.state = self.next_state
+            # Save time and state
+            self.trajectory['step'].append(t)
+            self.trajectory['time'].append(self.time)
+            
+            # Get the current state and action
+            self.current_action = output['u_t'][t]
+            self.next_state = self.dynamics(self.current_state, self.current_action)
+
+            # Store the trajectory
+            self.trajectory['state'].append(np.array(self.current_state, dtype = np.float32).flatten())
+            self.trajectory['action'].append(np.array(self.current_action, dtype = np.float32).flatten())
+            self.trajectory['next_state'].append(np.array(self.next_state, dtype = np.float32).flatten())
+            
+            self.current_state = self.next_state
             self.time += self.data.dt
-        self.plot_results()
+        
+        return self.trajectory
     
     # Reset the simulation to the initial state
     def reset(self):
@@ -159,12 +191,12 @@ class Pendulum:
         c_t = sp.Matrix([sp.diff(cost_func[0], var) for var in variables])
         C_t = sp.hessian(cost_func, variables)
 
-        self.state = self.initial_state
-        self.action = self.desired_action
+        self.current_state = self.initial_state
+        self.current_action = self.start_action
 
         # Delta x_t and delta u_t
-        delta_x_t = self.state - self.desired_state
-        delta_u_t = self.action - self.desired_action
+        delta_x_t = self.current_state - self.desired_state
+        delta_u_t = self.current_action - self.start_action
 
         # Define V_t+1 and v_t+1
         V_t_plus_1 = np.zeros((4, 4))
@@ -180,8 +212,8 @@ class Pendulum:
             q_t = c_t + F_t.T @ V_t_plus_1 @ f_t + F_t.T @ v_t_plus_1
 
             # Calculate Q(x_t,u_t)
-            vecstate = sp.Matrix(self.state - self.desired_state)
-            vecaction = sp.Matrix(self.action - self.desired_action)
+            vecstate = sp.Matrix(self.current_state - self.desired_state)
+            vecaction = sp.Matrix(self.current_action - self.start_action)
             stacked_vec = vecstate.col_join(vecaction)
             Qofx_t_u_t = 0.5 * (stacked_vec).T @ Q_t @ (stacked_vec) + stacked_vec.T @ q_t
 
@@ -206,7 +238,7 @@ class Pendulum:
             v_t = qx + Qxu @ k_t + K_t.T @ qu + K_t.T @ Quu @ k_t
 
             # Calculate Vofx_t 
-            Vofx_t = 0.5 * self.state.T @ V_t @ self.state + self.state.T @ v_t
+            Vofx_t = 0.5 * self.current_state.T @ V_t @ self.current_state + self.current_state.T @ v_t
 
             self.time -= self.data.dt
 
@@ -238,12 +270,10 @@ if __name__ == "__main__":
     pendulum = Pendulum(data)
     output, history = pendulum.LQRBackwardForwardRecursion()
 
-    print("Simulation results:")
-    for key, value in output.items():
-        if key == 'u_t':
-            print(f"{key}: {value}")
-            exit()
-
     # Simulate the pendulum dynamics
-    pendulum.simulate(dynamics="linear", output=output)
+    trajectory = pendulum.simulate(dynamics="linear", output=output)
+    with open("pendulum_simulation.txt", "w") as f:
+        for key, value in trajectory.items():
+            f.write(f"{key}: {value}\n")
+
     #pendulum.simulate(dynamics="non-linear", output=output)
