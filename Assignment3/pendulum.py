@@ -6,6 +6,7 @@ from pyparsing import C
 from regex import F
 from scipy.signal import cont2discrete
 import sympy as sp
+import scipy.linalg
 
 @dataclass
 class simData:
@@ -56,7 +57,7 @@ class Pendulum:
         self.Ad, self.Bd = self.c2d()
 
         # State cost matrix
-        self.Q  = np.eye(4)  # State cost matrix
+        self.Q  = np.eye(4)
         self.R = 0.01 * np.eye(1)
 
         # Outputs
@@ -71,10 +72,10 @@ class Pendulum:
 
     # Dynamics function - non-linear
     def non_linear_dynamics(self, state, action):
-        x1, x2, x3, x4 = np.array(state).flatten()
+        #x1, x2, x3, x4 = np.array(state).flatten()
         x, v, theta, w = np.array(state).flatten()
         m, M, L, g, d, b = self.data.m, self.data.M, self.data.L, self.data.g, self.data.d, self.data.b
-        u = np.array(action).flatten()
+        u = np.array(action).flatten()[0]
         dx1 = dx = v
         dx2 = dv = ((-(m**2)*(L**2)*g* np.cos(theta) * np.sin(theta)) + 
                     (m*(L**2)*((m*L*(w**2))* np.sin(theta)-(d*v))) + 
@@ -83,7 +84,7 @@ class Pendulum:
         dx4 = dw = (((m+M)*m*g*L* np.sin(theta)) - 
                     (m*L* np.cos(theta)*(m*L*(w**2)* np.sin(theta)-(d*v))) + 
                     (m*L* np.cos(theta)*u))/(m*(L**2)*(M+m*(1-(np.cos(theta)**2))))
-        return sp.Matrix([[dx1], [dx2.item()], [dx3], [dx4.item()]])
+        return np.array([[dx1], [dx2], [dx3], [dx4]])
     
     # Dynamics function - linear
     def lin_dynamics(self, state, action):
@@ -137,8 +138,8 @@ class Pendulum:
         # Plot state evolution: x, v, theta, omega
         plt.plot(times, states[:, 0], label='x (position)')
         plt.plot(times, states[:, 1], label='v (velocity)')
-        plt.plot(times, states[:, 2], label='θ (angle)')
-        plt.plot(times, states[:, 3], label='ω (angular velocity)')
+        plt.plot(times, states[:, 2], label='theta (angle)')
+        plt.plot(times, states[:, 3], label='omega (angular velocity)')
         plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--')
         plt.xlabel('Time (s)')
         plt.ylabel('State and Action values')
@@ -147,8 +148,39 @@ class Pendulum:
         plt.grid(True)
         plt.show()
 
+    # Plot the results of the simulation state and action separately
+    def plot_simulation_results_separately(self, trajectory):
+        import matplotlib.pyplot as plt
+        times = [step['time'] for step in trajectory]
+        states = np.array([step['state'].flatten() for step in trajectory])
+        actions = np.array([step['action'].flatten() for step in trajectory])
+        
+        # Plot state evolution: x, v, theta, omega
+        fig, axs = plt.subplots(4, 1, figsize=(10, 10))
+        axs[0].plot(times, states[:, 0], label='x (position)')
+        axs[0].set_ylabel('x (position)')
+        axs[0].legend()
+        
+        axs[1].plot(times, states[:, 1], label='v (velocity)')
+        axs[1].set_ylabel('v (velocity)')
+        axs[1].legend()
+        
+        axs[2].plot(times, states[:, 2], label='theta (angle)')
+        axs[2].set_ylabel('theta (angle)')
+        axs[2].legend()
+        
+        axs[3].plot(times, states[:, 3], label='omega (angular velocity)')
+        axs[3].set_ylabel('omega (angular velocity)')
+        axs[3].legend()
+        
+        plt.xlabel('Time (s)')
+        plt.title('Pendulum State Evolution')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
     def LQRBackwardForwardRecursion(self):
-        # Define the symbolic variables
+        # # Define the symbolic variables
         x1, x2, x3, x4 = sp.symbols('x1 x2 x3 x4')
         u1 = sp.symbols('u1')
         state = sp.Matrix([x1, x2, x3, x4])
@@ -190,14 +222,26 @@ class Pendulum:
 
         cl_t_numeric = cl_t_dir.subs(subs_dict).evalf()
         cl_t = np.array(cl_t_numeric, dtype=np.float64)
+        cl_t = cl_t.T
+        #print(cl_t.shape)
+
+        # F_t = np.hstack([self.Ad, self.Bd])
+        # C_t = scipy.linalg.block_diag(self.Q, self.R)
+        # cl_t = np.zeros((5, 1))
+        # fl_t = self.Bd
 
         # set the initial state and action
-        current_state = self.desired_state
+        current_state = self.data.desired_state
         current_action = self.start_action
 
-        # Define V_t+1 and v_t+1
-        V_t_plus_1 = np.zeros((4, 4))
-        v_t_plus_1 = np.zeros((4, 1))
+        # # Define V_t+1 and v_t+1
+        # V_t_plus_1 = np.zeros((4, 4))
+        # vl_t_plus_1 = np.zeros((4, 1))
+
+        # Define cost to go at the final state 
+        # https://stanford.edu/class/ee363/lectures/dlqr.pdf
+        V_t_plus_1 = self.Q
+        vl_t_plus_1 = self.Q @ self.data.desired_state + self.R @ self.start_action
 
         # Run the backward recursion
         print("Backward Recursion")
@@ -205,43 +249,68 @@ class Pendulum:
         for t in range(self.time_steps, -1, -1):
             # Calculate Q_t,q_t
             Q_t = C_t + F_t.T @ V_t_plus_1 @ F_t
-            q_t = cl_t + F_t.T @ V_t_plus_1 @ fl_t + F_t.T @ v_t_plus_1
+        
+            ql_t = cl_t + F_t.T @ V_t_plus_1 @ fl_t + F_t.T @ vl_t_plus_1
 
-            # Calculate Q(x_t,u_t)
-            vecstate = np.concatenate((current_state, current_action), axis=0)
-            Qofx_t_u_t = 0.5 * (vecstate).T @ Q_t @ (vecstate) + vecstate.T @ q_t
 
-            # Calculate u_t
-            u_t = np.argmin(Qofx_t_u_t)
-            next_action = np.array([[u_t]], dtype=np.float64)
+            ## Calculate Q(x_t,u_t) - Total cost from now to end if we take u_t for state x_t
+            #vecstate = np.concatenate((current_state, current_action), axis=0)
+            #Qofx_t_u_t = 0.5 * (vecstate).T @ Q_t @ (vecstate) + vecstate.T @ ql_t
+
+            ## Calculate u_t
+            #u_t = np.argmin(Qofx_t_u_t)
+            #next_action = np.array([[u_t]], dtype=np.float64)
 
             # Calculate Quu and Qux, Qxu and Qxx
             Quu = Q_t[4:5, 4:5]
             Qux = Q_t[4:5, 0:4]
             Qxu = Q_t[0:4, 4:5]
             Qxx = Q_t[0:4, 0:4]
-            qx = q_t[0:4, 0]
-            qu = q_t[4:5, 0]
+            qx = ql_t[0:4, 0]
+            qu = ql_t[4:5, 0]
 
             # Calculate K_t and k_t]
-            K_t = (-np.linalg.inv(Quu) @ Qux)
-            k_t = (-np.linalg.inv(Quu) @ qu)
+            Quu_reg = Quu + 5e-1 * np.eye(Quu.shape[0])
+            K_t = -np.linalg.solve(Quu_reg, Qux)
+            kl_t = -np.linalg.solve(Quu_reg, qu)
+            # K_t = (-np.linalg.inv(Quu) @ Qux)
+            # kl_t = (-np.linalg.inv(Quu) @ qu)
 
-            # Calculate V_t and v_t
+            current_action = K_t @ current_state + kl_t
+
+            # Calculate V_t and vl_t
             V_t = Qxx + Qxu @ K_t + K_t.T @ Qux + K_t.T @ Quu @ K_t
-            v_t = qx + Qxu @ k_t + K_t.T @ qu + K_t.T @ Quu @ k_t
+            vl_t = qx + Qxu @ kl_t + K_t.T @ qu + K_t.T @ Quu @ kl_t
 
-            # Calculate Vofx_t 
-            Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ v_t
+            V_t = 0.5 * (V_t + V_t.T)
+            vl_t = np.clip(vl_t, -1e1, 1e1)
+
+            # Calculate Vofx_t - Total cost from now untill end if from state x_t
+            Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ vl_t
             V_t_plus_1 = V_t
-            v_t_plus_1 = v_t
+            vl_t_plus_1 = vl_t
+
+            # print(f"Q_t: {Q_t}")
+            # print(f"cl_t: {cl_t}")
+            # print(f"fl_t: {fl_t}")
+            # print(f"ql_t: {ql_t}")
+            # print(f"qu: {qu}")
+            # print(f"K_t: {K_t}, kl_t: {kl_t}")
+            # print(f"V_t: {V_t}, vl_t: {vl_t}")
+
+            # if t in range(self.time_steps - 660, self.time_steps - 600):
+            #     print(f"t={t}, Quu={Quu}, cond={np.linalg.cond(Quu)}")
+            #     print(f"K_t={K_t}, kl_t={kl_t},V_t= {V_t}, vl_t={vl_t}")
+            
+            # if t == self.time_steps - 660:
+            #     exit()
             
             # Store the results
             #print(f"Current State: {current_state}, Current Action: {current_action}, Next State: {next_state}")
             output = {
                 'time': t,
                 'K_t': K_t,
-                'k_t': k_t,
+                'kl_t': kl_t,
             }
 
             self.output.insert(0,output)
@@ -249,23 +318,22 @@ class Pendulum:
         
         print("Forward Recursion")
         # Run the forward recursion
-        #state = self.desired_state
-        current_state = self.initial_state
+        current_state = self.data.initial_state
         self.time = 0
         for t in range(self.time_steps):
             # Get the current state and action
             K_t = self.output[t]['K_t']
-            k_t = self.output[t]['k_t']
+            kl_t = self.output[t]['kl_t']
 
-            u_t = K_t @ current_state + k_t
-            action = u_t
+            u_t = K_t @ current_state + kl_t
+            action = np.array([[u_t]], dtype=np.float64).reshape(1, 1)
             next_state = self.lin_dynamics(current_state, action)
             # Store the results
             output = {
                 'time': t,
                 'state': current_state,
                 'K_t': K_t,
-                'k_t': k_t,
+                'kl_t': kl_t,
                 'u_t': u_t,
             }
             current_state = next_state
@@ -287,4 +355,5 @@ if __name__ == "__main__":
 
     #pendulum.simulate(dynamics="non-linear", output=output)
     # Plot the results
-    pendulum.plot_simulation_results(trajectory)
+    #pendulum.plot_simulation_results(trajectory)
+    pendulum.plot_simulation_results_separately(trajectory)
