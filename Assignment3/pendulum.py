@@ -134,13 +134,14 @@ class Pendulum:
         times = [step['time'] for step in trajectory]
         states = np.array([step['state'].flatten() for step in trajectory])
         actions = np.array([step['action'].flatten() for step in trajectory])
-        
+        actions = np.clip(actions, -3e1, 3e1)  # Clip actions to avoid extreme values
+        plt.figure(figsize=(10, 10))
         # Plot state evolution: x, v, theta, omega
         plt.plot(times, states[:, 0], label='x (position)')
         plt.plot(times, states[:, 1], label='v (velocity)')
         plt.plot(times, states[:, 2], label='theta (angle)')
         plt.plot(times, states[:, 3], label='omega (angular velocity)')
-        plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--')
+        plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--', )
         plt.xlabel('Time (s)')
         plt.ylabel('State and Action values')
         plt.title('Pendulum Simulation Results')
@@ -268,13 +269,16 @@ class Pendulum:
             Qxx = Q_t[0:4, 0:4]
             qx = ql_t[0:4, 0]
             qu = ql_t[4:5, 0]
+            Quu_inv = np.linalg.inv(Quu)
 
             # Calculate K_t and k_t]
-            Quu_reg = Quu + 5e-1 * np.eye(Quu.shape[0])
-            K_t = -np.linalg.solve(Quu_reg, Qux)
-            kl_t = -np.linalg.solve(Quu_reg, qu)
+            # Quu_reg = Quu + 5e-1 * np.eye(Quu.shape[0])
+            # K_t = -np.linalg.solve(Quu_reg, Qux)
+            # kl_t = -np.linalg.solve(Quu_reg, qu)
             # K_t = (-np.linalg.inv(Quu) @ Qux)
             # kl_t = (-np.linalg.inv(Quu) @ qu)
+            K_t = -Quu_inv @ Qux
+            kl_t = -Quu_inv @ qu
 
             current_action = K_t @ current_state + kl_t
 
@@ -283,7 +287,7 @@ class Pendulum:
             vl_t = qx + Qxu @ kl_t + K_t.T @ qu + K_t.T @ Quu @ kl_t
 
             V_t = 0.5 * (V_t + V_t.T)
-            vl_t = np.clip(vl_t, -1e1, 1e1)
+            vl_t = np.clip(vl_t, -1e0, 1e0)
 
             # Calculate Vofx_t - Total cost from now untill end if from state x_t
             Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ vl_t
@@ -322,8 +326,8 @@ class Pendulum:
         self.time = 0
         for t in range(self.time_steps):
             # Get the current state and action
-            K_t = self.output[t]['K_t']
-            kl_t = self.output[t]['kl_t']
+            K_t = self.output[0]['K_t']
+            kl_t = self.output[0]['kl_t']
 
             u_t = K_t @ current_state + kl_t
             action = np.array([[u_t]], dtype=np.float64).reshape(1, 1)
@@ -355,5 +359,5 @@ if __name__ == "__main__":
 
     #pendulum.simulate(dynamics="non-linear", output=output)
     # Plot the results
-    #pendulum.plot_simulation_results(trajectory)
-    pendulum.plot_simulation_results_separately(trajectory)
+    pendulum.plot_simulation_results(trajectory)
+    #pendulum.plot_simulation_results_separately(trajectory)
