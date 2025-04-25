@@ -1,9 +1,13 @@
-import re
+'''
+Python script to simulate a pendulum using LQR control.
+Run the script to simulate the pendulum dynamics and plot the results.
+run cmd:
+    python pendulum.py
+'''
+
 import numpy as np
 import matplotlib.pyplot as plt
 from dataclasses import dataclass, field
-from pyparsing import C
-from regex import F
 from scipy.signal import cont2discrete
 import sympy as sp
 import scipy.linalg
@@ -42,14 +46,20 @@ class Pendulum:
         self.time = 0
         self.time_steps = int(self.data.T / self.data.dt)
 
-        # A and B matrices for continious time system
+        # A and B matrices for NonLinear time system
         self.A = np.array([[0, 1, 0, 0],
                               [0, -self.data.d/self.data.M, (self.data.b*self.data.m*self.data.g)/self.data.M, 0],
                               [0, 0, 0, 1],
                               [0, (-self.data.b*self.data.d)/self.data.M*self.data.L, (-self.data.b*(self.data.M+self.data.m))*self.data.g/(self.data.M * self.data.L), 0]])
         self.B = np.array([[0], [1/self.data.M], [0], [self.data.b/(self.data.L*self.data.M)]])
 
-        # A and B for discrete time system
+        # A and B for Linear time system
+        self.Al = np.array([[0, 1, 0, 0],
+                              [0, -self.data.d/self.data.M, (self.data.b*self.data.m*self.data.g)/self.data.M, 0],
+                              [0, 0, 0, 1],
+                              [0, (-self.data.b*self.data.d)/self.data.M*self.data.L, (-self.data.b*(self.data.M+self.data.m))*self.data.g/(self.data.M * self.data.L), 0]])
+        self.Bl = np.array([[0], [1/self.data.M], [0], [self.data.b/(self.data.L*self.data.M)]])
+        # Discrete-time system
         self.Ad, self.Bd = self.c2d()
 
         # State cost matrix
@@ -63,7 +73,7 @@ class Pendulum:
 
     # convert continuous-time system to discrete-time system using scipy library
     def c2d(self):
-        Ad, Bd, _, _, _ = cont2discrete((self.A, self.B,None,None), self.data.dt)
+        Ad, Bd, _, _, _ = cont2discrete((self.Al, self.Bl, None, None), self.data.dt)
         return Ad, Bd
 
     # Dynamics function - non-linear
@@ -125,14 +135,14 @@ class Pendulum:
         states = np.array([step['state'].flatten() for step in trajectory])
         actions = np.array([step['action'].flatten() for step in trajectory])
         # Clip actions for better visualization
-        actions = np.clip(actions, -3e1, 3e1)
-        plt.figure(figsize=(8, 8))
+        #actions = np.clip(actions, -2e2, 2e2)
+        plt.figure(figsize=(5, 5))
         # Plot state evolution: x, v, theta, omega
         plt.plot(times, states[:, 0], label='x (position)')
         plt.plot(times, states[:, 1], label='v (velocity)')
         plt.plot(times, states[:, 2], label='theta (angle)')
         plt.plot(times, states[:, 3], label='omega (angular velocity)')
-        plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--', )
+        plt.plot(times, actions[:, 0], label='u (control input)', linewidth=2.5)
         plt.xlabel('Time (s)')
         plt.ylabel('State and Action values')
         plt.title('Pendulum Simulation Results')
@@ -231,6 +241,8 @@ class Pendulum:
 
 
         ## In this particular case, the dirivatives are constant, don't actually need Symbolic functions
+        ## but we need the symbolic functions when the dirivatives are not constant.
+        ## But I am using the symbolic function to learn
         # F_t = np.hstack([self.Ad, self.Bd])
         # C_t = scipy.linalg.block_diag(self.Q, self.R)
         # cl_t = np.zeros((5, 1))
@@ -256,12 +268,12 @@ class Pendulum:
             Q_t = C_t + F_t.T @ V_t_plus_1 @ F_t
             ql_t = cl_t + F_t.T @ V_t_plus_1 @ fl_t + F_t.T @ vl_t_plus_1
 
-            ## Calculate Q(x_t,u_t) - Total cost from now to end if we take u_t for state x_t
+            ## Calculate Q(x_t,u_t) - cost togo from now to end if we take u_t for state x_t
             ## This case we are not using the Q cost function further in the calculation not commented
             #vecstate = np.concatenate((current_state, current_action), axis=0)
             #Qofx_t_u_t = 0.5 * (vecstate).T @ Q_t @ (vecstate) + vecstate.T @ ql_t
             ## Calculate u_t using u_t and x_t which gives the minimum cost
-            # u_t => argmin_u_t (Qofx_t_u_t)
+            ## u_t => argmin_u_t (Qofx_t_u_t) = K_t @ x_t + kl_t
 
             # Calculate Quu and Qux, Qxu and Qxx
             Quu = Q_t[4:5, 4:5]
@@ -272,9 +284,9 @@ class Pendulum:
             qu = ql_t[4:5, 0]
 
             # Calculate K_t and k_t. Add regularization to Quu to avoid issues with inverse
-            # Quu_reg = Quu + 5e-1 * np.eye(Quu.shape[0])
-            # K_t = -np.linalg.solve(Quu_reg, Qux)
-            # kl_t = -np.linalg.solve(Quu_reg, qu)
+            #Quu_reg = Quu + 1 * np.eye(Quu.shape[0])
+            #K_t = -np.linalg.solve(Quu_reg, Qux)
+            #kl_t = -np.linalg.solve(Quu_reg, qu)
             # K_t = (-np.linalg.inv(Quu_reg) @ Qux)
             # kl_t = (-np.linalg.inv(Quu_reg) @ qu)
             
@@ -287,12 +299,13 @@ class Pendulum:
             V_t = Qxx + Qxu @ K_t + K_t.T @ Qux + K_t.T @ Quu @ K_t
             vl_t = qx + Qxu @ kl_t + K_t.T @ qu + K_t.T @ Quu @ kl_t
 
-            # With V_t and vl_t dependent on K_t and kl_t
+            # With V_t and vl_t dependent on K_t and kl_t (in turn have inverse call)
             # The values can cause overflow or underflow. So we need to clip the values for stabilization
-            V_t = 0.5 * (V_t + V_t.T)
+            # set the clip values to a any reasonable value
+            #V_t = 0.5 * (V_t + V_t.T)
             vl_t = np.clip(vl_t, -1e0, 1e0)
 
-            # Calculate Vofx_t - Total cost from now untill end if from state x_t
+            # Calculate Vofx_t - cost togo from now untill end if from state x_t
             Vofx_t = 0.5 * current_state.T @ V_t @ current_state + current_state.T @ vl_t
 
             # set the V_t_plus_1 and vl_t_plus_1 for the next iteration
@@ -301,13 +314,13 @@ class Pendulum:
             
             # Store the results. Can be used directly but saving for easier debugging and the problem is small
             #print(f"Current State: {current_state}, Current Action: {current_action}, Next State: {next_state}")
-            output = {
-                'time': t,
-                'K_t': K_t,
-                'kl_t': kl_t,
-            }
+            # output = {
+            #     'time': t,
+            #     'K_t': K_t,
+            #     'kl_t': kl_t,
+            # }
 
-            self.output.insert(0,output)
+            # self.output.insert(0,output)
             self.time -= self.data.dt
         
         print("Forward Recursion")
@@ -315,9 +328,9 @@ class Pendulum:
         current_state = self.data.initial_state
         self.time = 0
         for t in range(self.time_steps):
-            # Pull the latest values of K_t and kl_t to calculate the action
-            K_t = self.output[0]['K_t']
-            kl_t = self.output[0]['kl_t']
+            # Pull the latest values of K_t and kl_t to calculate the action as the system is time invariant
+            # K_t = self.output[0]['K_t']
+            # kl_t = self.output[0]['kl_t']
             u_t = K_t @ current_state + kl_t
             action = np.array([[u_t]], dtype=np.float64).reshape(1, 1)
             next_state = self.lin_dynamics(current_state, action)
@@ -348,4 +361,4 @@ if __name__ == "__main__":
 
     # Plot the results
     pendulum.plot_simulation_results(trajectory)
-    pendulum.plot_simulation_results_separately(trajectory)
+    #pendulum.plot_simulation_results_separately(trajectory)
