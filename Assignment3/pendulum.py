@@ -134,14 +134,14 @@ class Pendulum:
         times = [step['time'] for step in trajectory]
         states = np.array([step['state'].flatten() for step in trajectory])
         actions = np.array([step['action'].flatten() for step in trajectory])
-        actions = np.clip(actions, -3e1, 3e1)  # Clip actions to avoid extreme values
+        #actions = np.clip(actions, -3e1, 3e1)  # Clip actions to avoid extreme values
         plt.figure(figsize=(10, 10))
         # Plot state evolution: x, v, theta, omega
         plt.plot(times, states[:, 0], label='x (position)')
         plt.plot(times, states[:, 1], label='v (velocity)')
         plt.plot(times, states[:, 2], label='theta (angle)')
         plt.plot(times, states[:, 3], label='omega (angular velocity)')
-        plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--', )
+        #plt.plot(times, actions[:, 0], label='u (control input)', linestyle='--', )
         plt.xlabel('Time (s)')
         plt.ylabel('State and Action values')
         plt.title('Pendulum Simulation Results')
@@ -311,13 +311,13 @@ class Pendulum:
             
             # Store the results
             #print(f"Current State: {current_state}, Current Action: {current_action}, Next State: {next_state}")
-            output = {
-                'time': t,
-                'K_t': K_t,
-                'kl_t': kl_t,
-            }
+            # output = {
+            #     'time': t,
+            #     'K_t': K_t,
+            #     'kl_t': kl_t,
+            # }
 
-            self.output.insert(0,output)
+            # self.output.insert(0,output)
             self.time -= self.data.dt
         
         print("Forward Recursion")
@@ -326,8 +326,8 @@ class Pendulum:
         self.time = 0
         for t in range(self.time_steps):
             # Get the current state and action
-            K_t = self.output[0]['K_t']
-            kl_t = self.output[0]['kl_t']
+            # K_t = self.output[0]['K_t']
+            # kl_t = self.output[0]['kl_t']
 
             u_t = K_t @ current_state + kl_t
             action = np.array([[u_t]], dtype=np.float64).reshape(1, 1)
