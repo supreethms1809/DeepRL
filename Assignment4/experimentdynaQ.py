@@ -4,6 +4,7 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import argparse
+import datetime
 
 def plot_results_steps(steps_list, p_steps):
     episodes = np.arange(len(steps_list[0]))
@@ -12,7 +13,7 @@ def plot_results_steps(steps_list, p_steps):
         degree = 4
         coefficients = np.polyfit(episodes, steps, degree)
         trend_line = np.polyval(coefficients, episodes)
-        #plt.plot(episodes, steps, alpha=0.5, label=f'Raw Steps (Planning Steps={p_steps[i]})')
+        plt.plot(episodes, steps, alpha=0.5, label=f'Raw Steps (Planning Steps={p_steps[i]})')
         if i == 0:
             plt.plot(episodes, trend_line, linestyle='-', label=f'Trend Line (Planning Steps={p_steps[i]})')
         else:
@@ -23,7 +24,8 @@ def plot_results_steps(steps_list, p_steps):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('steps_to_goal.png')
+    dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    plt.savefig(f'steps_to_goal_{dt}.png')
     plt.show()
 
 def plot_results_rewards(steps_list, p_steps):
@@ -33,7 +35,7 @@ def plot_results_rewards(steps_list, p_steps):
         degree = 4
         coefficients = np.polyfit(episodes, steps, degree)
         trend_line = np.polyval(coefficients, episodes)
-        #plt.plot(episodes, steps, alpha=0.5, label=f'Raw Steps (Planning Steps={p_steps[i]})')
+        plt.plot(episodes, steps, alpha=0.5, label=f'Raw Steps (Planning Steps={p_steps[i]})')
         if i == 0:
             plt.plot(episodes, trend_line, linestyle='-', label=f'Trend Line (Planning Steps={p_steps[i]})')
         else:
@@ -44,7 +46,8 @@ def plot_results_rewards(steps_list, p_steps):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig('steps_to_goal.png')
+    dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    plt.savefig(f'rewards_to_goal_{dt}.png')
     plt.show()
 
 def plot_grid(Q_values_list, p_steps):
@@ -68,7 +71,8 @@ def plot_grid(Q_values_list, p_steps):
     #fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.02, pad=0.04)
     plt.subplots_adjust(wspace=0.4, hspace=0.6)
     plt.tight_layout()
-    plt.savefig('qlearning_value_tables.png')
+    dt = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    plt.savefig(f"qlearning_value_tables_{dt}.png")
     plt.show()
 
 if __name__ == "__main__":
