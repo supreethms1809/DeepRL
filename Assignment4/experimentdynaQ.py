@@ -92,11 +92,11 @@ if args.run:
         print(f"Running dynaQ.py with --planning_steps={planning_steps}")
         subprocess.run([
             "python", "dynaQ.py",
-            "--grid_size", "60",
+            "--grid_size", "20",
             "--alpha", "0.01",
             "--gamma", "0.99",
             "--epsilon", "0.01",
-            "--episodes", "600000",
+            "--episodes", "15000",
             "--loggin",
             "--steps", "1000",
             "--planning_steps", str(planning_steps)
